@@ -3,26 +3,23 @@
 namespace duckdb {
 
 inline idx_t GetBufferSize(const string buffer_size_string) {
-
-	if (!buffer_size_string.compare("S32K")) {
-		return 32768;
-	} else if (!buffer_size_string.compare("S64K")) {
-		return 65536;
-	} else if (!buffer_size_string.compare("S96K")) {
-		return 98304;
-	} else if (!buffer_size_string.compare("S128K")) {
-		return 131072;
-	} else if (!buffer_size_string.compare("S160K")) {
-		return 163840;
-	} else if (!buffer_size_string.compare("S192K")) {
-		return 196608;
-	} else if (!buffer_size_string.compare("S224K")) {
-		return 229376;
-	} else if (!buffer_size_string.compare("DEFAULT")) {
+    if (str.length() == 7) {
 		return 262144;
-	} else {
-		throw InvalidInputException("Unknown buffer size %s", buffer_size_string.c_str());
 	}
+
+    // Grab the digits (e.g., "32" from "S32K") as a uint16
+    uint16_t id = *reinterpret_cast<const uint16_t*>(&buffer_size_string[1]);
+
+    switch (id) {
+        case 0x3233: return 32768;  // "32"
+        case 0x3436: return 65536;  // "64"
+        case 0x3639: return 98304;  // "96"
+        case 0x3231: return 131072; // "12" from 128
+        case 0x3631: return 163840; // "16" from 160
+        case 0x3931: return 196608; // "19" from 192
+        case 0x3232: return 229376; // "22" from 224
+        default: 	 return (buffer_size_string == "DEFAULT") ? 262144 : 0;
+    }
 }
 
 inline unique_ptr<TempFileMetadata> CreateTempFileMetadata(const string &filename) {
