@@ -3,7 +3,8 @@
 
 namespace duckdb {
 
-NvmeFileHandle::NvmeFileHandle(FileSystem &file_system, string path, FileOpenFlags flags, unique_ptr<FileMetadataStrategy> strategy_p)
+NvmeFileHandle::NvmeFileHandle(FileSystem &file_system, string path, FileOpenFlags flags,
+                               unique_ptr<FileMetadataStrategy> strategy_p)
     : FileHandle(file_system, path, flags), cursor_offset(0), strategy(std::move(strategy_p)) {
 }
 
@@ -26,18 +27,7 @@ void NvmeFileHandle::Sync() {
 void NvmeFileHandle::Close() {
 }
 
-unique_ptr<CmdContext> NvmeFileHandle::PrepareWriteCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset) {
-	unique_ptr<NvmeCmdContext> nvme_cmd_ctx = make_uniq<NvmeCmdContext>();
-	nvme_cmd_ctx->nr_bytes = nr_bytes;
-	nvme_cmd_ctx->filepath = path;
-	nvme_cmd_ctx->offset = offset;
-	nvme_cmd_ctx->start_lba = start_lba;
-	nvme_cmd_ctx->nr_lbas = CalculateRequiredLBACount(nr_bytes);
-
-	return std::move(nvme_cmd_ctx);
-}
-
-unique_ptr<CmdContext> NvmeFileHandle::PrepareReadCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset) {
+unique_ptr<CmdContext> NvmeFileHandle::PrepareCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset) {
 	unique_ptr<NvmeCmdContext> nvme_cmd_ctx = make_uniq<NvmeCmdContext>();
 	nvme_cmd_ctx->nr_bytes = nr_bytes;
 	nvme_cmd_ctx->filepath = path;
@@ -84,11 +74,8 @@ NvmeFileSystem::~NvmeFileSystem() {
 	device.reset();
 }
 
-unique_ptr<FileHandle> NvmeFileSystem::OpenFile(
-	const string &path, 
-	FileOpenFlags flags,
-	optional_ptr<FileOpener> opener
-) {
+unique_ptr<FileHandle> NvmeFileSystem::OpenFile(const string &path, FileOpenFlags flags,
+                                                optional_ptr<FileOpener> opener) {
 	if (path == NvmePathHandler::GLOBAL_METADATA_PATH) {
 		return make_uniq<NvmeFileHandle>(*this, path, flags, unique_ptr<FileMetadataStrategy>(nullptr));
 	}
@@ -102,10 +89,11 @@ unique_ptr<FileHandle> NvmeFileSystem::OpenFile(
 	}
 
 	if (!metadata) {
-        throw InternalException("Metadata uninitialized after loading attempt");
-    }
+		throw InternalException("Metadata uninitialized after loading attempt");
+	}
 
-	unique_ptr<FileMetadataStrategy> strategy(FileStrategyFactory::GetStrategy(path, metadata.get(), db_location, wal_location, temp_meta_manager));
+	unique_ptr<FileMetadataStrategy> strategy(
+	    FileStrategyFactory::GetStrategy(path, metadata.get(), db_location, wal_location, temp_meta_manager));
 
 	if (flags.CreateFileIfNotExists() && NvmePathHandler::GetFileType(path) == NvmeFileType::TEMPORARY) {
 		strategy->CreateFile(path);
@@ -121,12 +109,12 @@ void NvmeFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes, id
 	idx_t cursor_offset = SeekPosition(handle);
 	location += cursor_offset;
 	idx_t nr_lbas = fh.CalculateRequiredLBACount(nr_bytes);
-	
-	FileMetadataStrategy* strategy = fh.GetStrategy();
+
+	FileMetadataStrategy *strategy = fh.GetStrategy();
 
 	idx_t start_lba = strategy->GetLBA(handle.path, nr_bytes, location, nr_lbas, geo);
 	idx_t in_block_offset = location % geo.lba_size;
-	unique_ptr<CmdContext> cmd_ctx = fh.PrepareReadCommand(nr_bytes, start_lba, in_block_offset);
+	unique_ptr<CmdContext> cmd_ctx = fh.PrepareCommand(nr_bytes, start_lba, in_block_offset);
 
 	if (!strategy->IsLBAInRange(handle.path, start_lba, cmd_ctx->nr_lbas, geo)) {
 		throw IOException("Read out of range");
@@ -142,12 +130,12 @@ void NvmeFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, i
 	idx_t cursor_offset = SeekPosition(handle);
 	location += cursor_offset;
 	idx_t nr_lbas = fh.CalculateRequiredLBACount(nr_bytes);
-	
-	FileMetadataStrategy* strategy = fh.GetStrategy();
-	
+
+	FileMetadataStrategy *strategy = fh.GetStrategy();
+
 	idx_t start_lba = strategy->GetLBA(fh.path, nr_bytes, location, nr_lbas, geo);
 	idx_t in_block_offset = location % geo.lba_size;
-	unique_ptr<CmdContext> cmd_ctx = fh.PrepareWriteCommand(nr_bytes, start_lba, in_block_offset);
+	unique_ptr<CmdContext> cmd_ctx = fh.PrepareCommand(nr_bytes, start_lba, in_block_offset);
 
 	if (!strategy->IsLBAInRange(handle.path, start_lba, cmd_ctx->nr_lbas, geo)) {
 		throw IOException("Write out of range");
@@ -176,9 +164,9 @@ bool NvmeFileSystem::FileExists(const string &filename, optional_ptr<FileOpener>
 		return false;
 	}
 
-	unique_ptr<FileMetadataStrategy> strategy(FileStrategyFactory::GetStrategy(
-	    filename, metadata.get(), db_location, wal_location, temp_meta_manager));
-	
+	unique_ptr<FileMetadataStrategy> strategy(
+	    FileStrategyFactory::GetStrategy(filename, metadata.get(), db_location, wal_location, temp_meta_manager));
+
 	return strategy->FileExists(filename);
 }
 
@@ -186,8 +174,8 @@ int64_t NvmeFileSystem::GetFileSize(FileHandle &handle) {
 	DeviceGeometry geo = device->GetDeviceGeometry();
 	NvmeFileHandle &fh = handle.Cast<NvmeFileHandle>();
 
-	FileMetadataStrategy* strategy = fh.GetStrategy();
-	
+	FileMetadataStrategy *strategy = fh.GetStrategy();
+
 	idx_t nr_lbas = strategy->GetFileSizeLBA(fh.path);
 	return nr_lbas * geo.lba_size;
 }
@@ -208,7 +196,7 @@ void NvmeFileSystem::Truncate(FileHandle &handle, int64_t new_size) {
 		throw InvalidInputException("new_size is bigger than the current file size.");
 	}
 
-	FileMetadataStrategy* strategy = nvme_handle.GetStrategy();
+	FileMetadataStrategy *strategy = nvme_handle.GetStrategy();
 	strategy->Truncate(nvme_handle.path, new_size);
 }
 
@@ -237,21 +225,21 @@ void NvmeFileSystem::CreateDirectory(const string &directory, optional_ptr<FileO
 }
 
 void NvmeFileSystem::RemoveFile(const string &filename, optional_ptr<FileOpener> opener) {
-	unique_ptr<FileMetadataStrategy> strategy(FileStrategyFactory::GetStrategy(
-	    filename, metadata.get(), db_location, wal_location, temp_meta_manager));
-	
+	unique_ptr<FileMetadataStrategy> strategy(
+	    FileStrategyFactory::GetStrategy(filename, metadata.get(), db_location, wal_location, temp_meta_manager));
+
 	strategy->RemoveFile(filename);
 }
 
 void NvmeFileSystem::Seek(FileHandle &handle, idx_t location) {
 	NvmeFileHandle &nvme_handle = handle.Cast<NvmeFileHandle>();
 	DeviceGeometry geo = device->GetDeviceGeometry();
-	
+
 	D_ASSERT(location % geo.lba_size == 0);
 
 	unique_ptr<FileMetadataStrategy> strategy(FileStrategyFactory::GetStrategy(
 	    nvme_handle.path, metadata.get(), db_location, wal_location, temp_meta_manager));
-	
+
 	idx_t max_seek_bound = strategy->GetSeekBound(nvme_handle.path, geo);
 
 	if (location >= max_seek_bound) {
@@ -382,7 +370,7 @@ void NvmeFileSystem::InitializeMetadata(const string &filename) {
 }
 
 unique_ptr<GlobalMetadata> NvmeFileSystem::ReadMetadata() {
-    idx_t nr_bytes_magic = sizeof(NvmePathHandler::MAGIC_BYTES);
+	idx_t nr_bytes_magic = sizeof(NvmePathHandler::MAGIC_BYTES);
 	idx_t nr_bytes_global = sizeof(GlobalMetadata);
 	idx_t bytes_to_read = nr_bytes_magic + nr_bytes_global;
 
@@ -392,7 +380,7 @@ unique_ptr<GlobalMetadata> NvmeFileSystem::ReadMetadata() {
 	FileOpenFlags flags = FileOpenFlags::FILE_FLAGS_READ;
 	unique_ptr<FileHandle> fh = OpenFile(NvmePathHandler::GLOBAL_METADATA_PATH, flags);
 	unique_ptr<CmdContext> cmd_ctx =
-	    fh->Cast<NvmeFileHandle>().PrepareReadCommand(bytes_to_read, NvmePathHandler::GLOBAL_METADATA_LOCATION, 0);
+	    fh->Cast<NvmeFileHandle>().PrepareCommand(bytes_to_read, NvmePathHandler::GLOBAL_METADATA_LOCATION, 0);
 
 	device->Read(buffer, *cmd_ctx);
 
@@ -409,7 +397,7 @@ unique_ptr<GlobalMetadata> NvmeFileSystem::ReadMetadata() {
 }
 
 void NvmeFileSystem::WriteMetadata(GlobalMetadata &global) {
-    idx_t nr_bytes_magic = sizeof(NvmePathHandler::MAGIC_BYTES);
+	idx_t nr_bytes_magic = sizeof(NvmePathHandler::MAGIC_BYTES);
 	idx_t nr_bytes_global = sizeof(GlobalMetadata);
 	idx_t bytes_to_write = nr_bytes_magic + nr_bytes_global;
 
@@ -423,7 +411,7 @@ void NvmeFileSystem::WriteMetadata(GlobalMetadata &global) {
 	FileOpenFlags flags = FileOpenFlags::FILE_FLAGS_WRITE;
 	unique_ptr<FileHandle> fh = OpenFile(NvmePathHandler::GLOBAL_METADATA_PATH, flags);
 	unique_ptr<CmdContext> cmd_ctx =
-	    fh->Cast<NvmeFileHandle>().PrepareWriteCommand(bytes_to_write, NvmePathHandler::GLOBAL_METADATA_LOCATION, 0);
+	    fh->Cast<NvmeFileHandle>().PrepareCommand(bytes_to_write, NvmePathHandler::GLOBAL_METADATA_LOCATION, 0);
 
 	device->Write(buffer, *cmd_ctx);
 
