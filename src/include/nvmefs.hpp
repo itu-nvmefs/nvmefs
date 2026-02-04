@@ -35,7 +35,8 @@ class NvmeFileHandle : public FileHandle {
 	friend class NvmeFileSystem;
 
 public:
-	NvmeFileHandle(FileSystem &file_system, string path, FileOpenFlags flags, unique_ptr<FileMetadataStrategy> strategy_p);
+	NvmeFileHandle(FileSystem &file_system, string path, FileOpenFlags flags,
+	               unique_ptr<FileMetadataStrategy> strategy_p);
 	~NvmeFileHandle() = default;
 
 	void Read(void *buffer, idx_t nr_bytes, idx_t location);
@@ -46,12 +47,12 @@ public:
 
 	void Close() override;
 
-	inline FileMetadataStrategy* GetStrategy() {
+	inline FileMetadataStrategy *GetStrategy() {
 		return strategy.get();
 	}
+
 private:
-	unique_ptr<CmdContext> PrepareWriteCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset);
-	unique_ptr<CmdContext> PrepareReadCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset);
+	unique_ptr<CmdContext> PrepareCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset);
 
 	/// @brief Calculates the amount of LBAs required to store the given number of bytes
 	/// @param nr_bytes The number of bytes to store
