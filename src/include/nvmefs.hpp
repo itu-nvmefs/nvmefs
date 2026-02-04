@@ -8,16 +8,9 @@
 #include "nvme_device.hpp"
 #include "nvmefs_config.hpp"
 #include "temporary_file_metadata_manager.hpp"
+#include "nvmefs_path_handler.hpp"
 
 namespace duckdb {
-
-constexpr idx_t NVMEFS_GLOBAL_METADATA_LOCATION = 0;
-constexpr char NVMEFS_MAGIC_BYTES[] = "NVMEFS";
-const string NVMEFS_PATH_PREFIX = "nvmefs://";
-const string NVMEFS_TMP_DIR_PATH = "nvmefs:///tmp";
-const string NVMEFS_GLOBAL_METADATA_PATH = "nvmefs://.global_metadata";
-
-enum MetadataType { DATABASE, WAL, TEMPORARY };
 
 struct GlobalMetadata {
 	uint64_t db_path_size;
@@ -110,7 +103,6 @@ private:
 	unique_ptr<GlobalMetadata> ReadMetadata();
 	void WriteMetadata(GlobalMetadata &global);
 	void UpdateMetadata(CmdContext &Context);
-	MetadataType GetMetadataType(const string &filename);
 	idx_t GetLBA(const string &filename, idx_t nr_bytes, idx_t location, idx_t nr_lbas);
 
 	/// @brief Checks that the start_lba is within the assigned metadata range and that lba_start+lba_count is within
