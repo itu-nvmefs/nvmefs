@@ -14,7 +14,7 @@ enum class NvmeFileType : uint8_t {
 
 class NvmePathHandler {
 public:
-    static constexpr char MAGIC_BYTES[] = "NVMEFS";
+    static inline constexpr char MAGIC_BYTES[] = "NVMEFS";
     static constexpr idx_t GLOBAL_METADATA_LOCATION = 0;
     static const string PATH_PREFIX;
     static const string TMP_DIR_PATH;

@@ -10,3 +10,6 @@ test/python/__pycache__/
 **/.venv
 **/*.pyc
 vcpkg_installed/**
+
+output.log
+yolo.py
