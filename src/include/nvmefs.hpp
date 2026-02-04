@@ -8,16 +8,10 @@
 #include "nvme_device.hpp"
 #include "nvmefs_config.hpp"
 #include "temporary_file_metadata_manager.hpp"
+#include "nvmefs_path_handler.hpp"
+#include "strategies/file_metadata_strategy.hpp"
 
 namespace duckdb {
-
-constexpr idx_t NVMEFS_GLOBAL_METADATA_LOCATION = 0;
-constexpr char NVMEFS_MAGIC_BYTES[] = "NVMEFS";
-const string NVMEFS_PATH_PREFIX = "nvmefs://";
-const string NVMEFS_TMP_DIR_PATH = "nvmefs:///tmp";
-const string NVMEFS_GLOBAL_METADATA_PATH = "nvmefs://.global_metadata";
-
-enum MetadataType { DATABASE, WAL, TEMPORARY };
 
 struct GlobalMetadata {
 	uint64_t db_path_size;
@@ -41,7 +35,7 @@ class NvmeFileHandle : public FileHandle {
 	friend class NvmeFileSystem;
 
 public:
-	NvmeFileHandle(FileSystem &file_system, string path, FileOpenFlags flags);
+	NvmeFileHandle(FileSystem &file_system, string path, FileOpenFlags flags, unique_ptr<FileMetadataStrategy> strategy_p);
 	~NvmeFileHandle() = default;
 
 	void Read(void *buffer, idx_t nr_bytes, idx_t location);
@@ -52,6 +46,9 @@ public:
 
 	void Close() override;
 
+	inline FileMetadataStrategy* GetStrategy() {
+		return strategy.get();
+	}
 private:
 	unique_ptr<CmdContext> PrepareWriteCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset);
 	unique_ptr<CmdContext> PrepareReadCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset);
@@ -65,6 +62,7 @@ private:
 	idx_t GetFilePointer();
 
 private:
+	unique_ptr<FileMetadataStrategy> strategy;
 	idx_t cursor_offset;
 };
 
@@ -109,17 +107,6 @@ private:
 	void InitializeMetadata(const string &filename);
 	unique_ptr<GlobalMetadata> ReadMetadata();
 	void WriteMetadata(GlobalMetadata &global);
-	void UpdateMetadata(CmdContext &Context);
-	MetadataType GetMetadataType(const string &filename);
-	idx_t GetLBA(const string &filename, idx_t nr_bytes, idx_t location, idx_t nr_lbas);
-
-	/// @brief Checks that the start_lba is within the assigned metadata range and that lba_start+lba_count is within
-	/// the assigned metadata range
-	/// @param filename name of the file to check
-	/// @param start_lba Start LBA of the IO operation to be performed
-	/// @param lba_count Number of LBAs to be read/written
-	/// @return True if it is in range, false otherwise
-	bool IsLBAInRange(const string &filename, idx_t start_lba, idx_t lba_count);
 
 private:
 	Allocator &allocator;
