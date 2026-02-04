@@ -10,6 +10,8 @@ struct DeviceGeometry {
 };
 
 struct CmdContext {
+	virtual ~CmdContext() = default;
+
 	idx_t nr_bytes;
 	idx_t nr_lbas;
 	idx_t start_lba;

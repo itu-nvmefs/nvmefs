@@ -63,7 +63,7 @@ idx_t NvmeFileHandle::GetFilePointer() {
 
 ////////////////////////////////////////
 
-std::recursive_mutex NvmeFileSystem::temp_lock;
+//std::recursive_mutex NvmeFileSystem::temp_lock;
 
 NvmeFileSystem::NvmeFileSystem(NvmeConfig config)
     : allocator(Allocator::DefaultAllocator()),
@@ -80,6 +80,8 @@ NvmeFileSystem::~NvmeFileSystem() {
 	if (metadata) {
 		WriteMetadata(*metadata);
 	}
+	temp_meta_manager.reset();
+	device.reset();
 }
 
 unique_ptr<FileHandle> NvmeFileSystem::OpenFile(const string &path, FileOpenFlags flags,
