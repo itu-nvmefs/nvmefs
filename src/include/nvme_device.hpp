@@ -33,7 +33,7 @@ public:
 	/// @param start_lab The LBA to start writing from
 	/// @param offset An offset into the LBA
 	/// @return The amount of LBAs written to the device
-	idx_t Write(void *buffer, const CmdContext &context) override;
+	void Write(void *buffer, const CmdContext &context) override;
 
 	/// @brief Reads data from the device at the specified LBA position into the output buffer
 	/// @param buffer The output buffer that will contain data read from the device
@@ -42,7 +42,7 @@ public:
 	/// @param start_lab The LBA to start reading from
 	/// @param offset An offset into the LBA
 	/// @return The amount of LBAs read from the device
-	idx_t Read(void *buffer, const CmdContext &context) override;
+	void Read(void *buffer, const CmdContext &context) override;
 
 	/// @brief Fetches the geometry of the device
 	/// @return The device geometry
@@ -79,8 +79,8 @@ private:
 
 	static void CommandCallback(struct xnvme_cmd_ctx *ctx, void *cb_args);
 
-	idx_t ReadAsync(void *buffer, const CmdContext &context);
-	idx_t WriteAsync(void *buffer, const CmdContext &context);
+	void ReadAsync(void *buffer, const CmdContext &context);
+	void WriteAsync(void *buffer, const CmdContext &context);
 
 	void PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_ctx, idx_t plid_idx, idx_t dtype, bool write);
 	bool CheckFDP();
