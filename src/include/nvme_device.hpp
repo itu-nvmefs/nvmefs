@@ -10,6 +10,7 @@
 #include <mutex>
 #include <future>
 #include <chrono>
+#include "nvme_memory_manager.hpp"
 
 namespace duckdb {
 
@@ -103,6 +104,7 @@ private:
 	static thread_local optional_idx index;
 
 	unique_ptr<NvmeIOEngine> io_engine;
+	unique_ptr<NvmeMemoryManager> memory_manager;
 };
 
 } // namespace duckdb

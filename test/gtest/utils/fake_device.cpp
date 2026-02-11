@@ -9,7 +9,7 @@ FakeDevice::~FakeDevice() {
 	delete[] memory;
 }
 
-idx_t FakeDevice::Write(void *buffer, const CmdContext &context) {
+void FakeDevice::Write(void *buffer, const CmdContext &context) {
 	D_ASSERT(context.start_lba + context.nr_lbas <= geometry.lba_count);
 
 	// Get pointer to the start of the requested memory location
@@ -18,11 +18,9 @@ idx_t FakeDevice::Write(void *buffer, const CmdContext &context) {
 
 	// Write the data to in-memory device
 	memcpy(mem_ptr, buffer, context.nr_bytes);
-
-	return context.nr_lbas;
 }
 
-idx_t FakeDevice::Read(void *buffer, const CmdContext &context) {
+void FakeDevice::Read(void *buffer, const CmdContext &context) {
 	D_ASSERT(context.start_lba + context.nr_lbas <= geometry.lba_count);
 
 	// Get pointer to the start of the requested memory location
@@ -31,8 +29,6 @@ idx_t FakeDevice::Read(void *buffer, const CmdContext &context) {
 
 	// Read the data from in-memory device to the buffer
 	memcpy(buffer, mem_ptr, context.nr_bytes);
-
-	return context.nr_lbas;
 }
 
 DeviceGeometry FakeDevice::GetDeviceGeometry() {
