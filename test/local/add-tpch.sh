@@ -2,18 +2,13 @@
 
 source ./common.sh
 
-SF=$1
-
-if [ -z "$1" ]; then
-    echo "Usage: $0 <tpch-data-dir>"
-    exit 1
-fi
+SF=30
 
 echo "Setting up TPCH data with scale factor $SF, this may take a while..."
 
 run_duckdb "
 LOAD tpch;
-SET threads = 64;
+SET threads = 124;
 CALL dbgen(sf = $SF);
 "
 

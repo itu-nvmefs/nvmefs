@@ -1,25 +1,54 @@
+#!/bin/bash
 source ./common.sh
 
-echo "Query,Iteration,Duration" > results.csv
+OUTPUT="sf30-old-fixed.csv"
 
-for query in $(seq 1 22); do
+echo "Version,Query,Iteration,Duration" > $OUTPUT
+
+for query in "9" "10" "13" "18" "21" "1"; do
     echo "Benchmarking TPCH Query $query..."
+
+    DUCKDB="../../../nvmefs/build/${MODE}/duckdb"
+
     for j in $(seq 1 3); do
-        
-        # 1. Capture start time
-        # %s.%N gives seconds.nanoseconds
         start_time=$(date +%s.%N)
 
-        # 2. Run the workload
-        # Using > /dev/null to hide output so it doesn't clutter the terminal
-        duration=$($DUCKDB -csv -noheader -c "
-            ATTACH DATABASE 'nvmefs://example.db' AS nvme (READ_WRITE); USE nvme;
-            SET enable_profiling = 'json';
+        $DUCKDB -c "
+            ATTACH 'nvmefs://sf30.db' AS nvme;
+            USE nvme;
+            LOAD tpch;
+            SET threads = 16;
+            SET memory_limit = '2000MB';
             PRAGMA tpch($query);
-            " | grep "latency" | awk -F',' '{print $2}')
-                    echo "  Iter $j: ${duration}s"
+        " > /dev/null 2>&1
+
+        end_time=$(date +%s.%N)
+
+        duration=$(echo "$end_time - $start_time" | bc)
         
-        # Log to file
-        echo "$query,$j,$duration" >> results.csv
+        echo "old,$query,$j,$duration" >> $OUTPUT
+        echo "  Old Iteration $j: ${duration}s"
+    done
+
+    DUCKDB="../../../nvmefs-deniz/build/${MODE}/duckdb"
+
+    for j in $(seq 1 3); do
+        start_time=$(date +%s.%N)
+
+        $DUCKDB -c "
+            ATTACH 'nvmefs://sf30.db' AS nvme;
+            USE nvme;
+            LOAD tpch;
+            SET threads = 16;
+            SET memory_limit = '2000MB';
+            PRAGMA tpch($query);
+        " > /dev/null 2>&1
+
+        end_time=$(date +%s.%N)
+
+        duration=$(echo "$end_time - $start_time" | bc)
+        
+        echo "new,$query,$j,$duration" >> $OUTPUT
+        echo " New Iteration $j: ${duration}s"
     done
 done
