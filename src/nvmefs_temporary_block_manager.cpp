@@ -220,8 +220,9 @@ void NvmeTemporaryBlockManager::RemoveFreeBlock(TemporaryBlock *block) {
 		uint8_t free_list_index = GetFreeListIndex(block->lba_amount);
 
 		blocks_free[free_list_index] = block->next_free_block;
-		if (blocks_free[free_list_index] != nullptr)
+		if (blocks_free[free_list_index] != nullptr) {
 			blocks_free[free_list_index]->previous_free_block = nullptr; // Set the previous block to null
+		}
 	} else {
 		// Set the previous free block to the next free block
 		block->previous_free_block->next_free_block = block->next_free_block;

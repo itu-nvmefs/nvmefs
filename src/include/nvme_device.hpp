@@ -54,10 +54,10 @@ public:
 	string GetName() const {
 		return "NvmeDevice";
 	}
-	
-	NvmeMemoryManager* GetMemoryManager() {
-        return memory_manager.get();
-    }
+
+	NvmeMemoryManager *GetMemoryManager() {
+		return memory_manager.get();
+	}
 
 private:
 	/// @brief Determines which placment handler should be used for the given path

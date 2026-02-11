@@ -66,21 +66,21 @@ static void AddConfig(DatabaseInstance &instance) {
 	if (!nvmeConfig.device_path.empty()) {
 		auto &fs = instance.GetFileSystem();
 		// 1. Create the FileSystem
-        auto nvmefs_ptr = make_uniq<NvmeFileSystem>(nvmeConfig);
-        
-        // 2. Keep a raw pointer to it BEFORE moving ownership
-        NvmeFileSystem* fs_raw_ptr = nvmefs_ptr.get();
-        
-        // 3. Register it (ownership moves to DuckDB)
-        fs.RegisterSubSystem(std::move(nvmefs_ptr));
+		auto nvmefs_ptr = make_uniq<NvmeFileSystem>(nvmeConfig);
 
-        // 4. NOW call the allocator swap using the pointer we saved
-        NvmeAllocator::OverwriteGlobal(instance, fs_raw_ptr);	
+		// 2. Keep a raw pointer to it BEFORE moving ownership
+		NvmeFileSystem *fs_raw_ptr = nvmefs_ptr.get();
+
+		// 3. Register it (ownership moves to DuckDB)
+		fs.RegisterSubSystem(std::move(nvmefs_ptr));
+
+		// 4. NOW call the allocator swap using the pointer we saved
+		NvmeAllocator::OverwriteGlobal(instance, fs_raw_ptr);
 	} else {
 		duckdb::Printer::Print(
 		    "Nvmefs extension loaded but no nvme_device_path specified. NvmeFileSystem will not be registered.");
-		duckdb::Printer::Print(
-		    "To use the NvmeFileSystem, set the 'nvme_device_path' configuration option to the path of the NVMe device and restart the database.");
+		duckdb::Printer::Print("To use the NvmeFileSystem, set the 'nvme_device_path' configuration option to the path "
+		                       "of the NVMe device and restart the database.");
 	}
 }
 
