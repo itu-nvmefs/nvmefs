@@ -45,87 +45,122 @@ NvmeDevice::~NvmeDevice() {
 }
 
 void NvmeDevice::Write(void *buffer, const CmdContext &context) {
-	if (async) {
-		WriteAsync(buffer, context);
-		return;
-	}
+    if (async) {
+        WriteAsync(buffer, context);
+        return;
+    }
 
-	const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
-	D_ASSERT(ctx.nr_lbas > 0);
-	D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
+    const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
+    D_ASSERT(ctx.nr_lbas > 0);
+    
+    idx_t alloc_size = ctx.nr_lbas * geometry.lba_size;
+    
+    // --- ZERO COPY CHECK ---
+    // 1. Is this a full block write? (No offsets, full size)
+    // 2. Is the buffer one of ours? (DMA capable)
+    bool is_aligned = (ctx.offset == 0 && ctx.nr_bytes == alloc_size);
+    bool is_dma_safe = memory_manager->IsManaged(buffer, ctx.nr_bytes);
 
-	// FIX: Allocate based on LBA size
-	idx_t alloc_size = ctx.nr_lbas * geometry.lba_size;
-	nvme_buf_ptr dev_buffer = AllocateDeviceBuffer(alloc_size);
+    if (is_aligned && is_dma_safe) {
+        // FAST PATH: Zero-Copy
+        uint32_t nsid = xnvme_dev_get_nsid(device);
+        uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
+        xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
 
-	if (ctx.offset > 0 || ctx.nr_bytes < alloc_size) {
-		// Partial block write: We must read the existing block first to preserve surrounding data
-		// NOTE: We cannot use 'Read' here recursively if we want to avoid extra allocs,
-		// but for simplicity, let's just ensure we fill the buffer with existing data.
+        PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, DATA_PLACEMENT_MODE, true);
 
-		// Manual read to avoid recursion loop or just use the raw xnvme call:
-		uint32_t nsid = xnvme_dev_get_nsid(device);
-		xnvme_cmd_ctx read_ctx = xnvme_cmd_ctx_from_dev(device);
-		// Prepare read ctx... (simplified)
-		read_ctx.cmd.common.cdw12 = ctx.nr_lbas - 1;
+        int err = xnvme_nvm_write(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, buffer, nullptr);
+        if (err) {
+            xnvme_cli_perr("xnvme_nvm_write failed (Zero-Copy)", err);
+            throw IOException("Write failed");
+        }
+        return; 
+    }
+    // -----------------------
 
-		int err = xnvme_nvm_read(&read_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
-		if (err) {
-			FreeDeviceBuffer(dev_buffer);
-			throw IOException("Read-modify-write failed");
-		}
-	}
+    // SLOW PATH: Bounce Buffer (Original Logic)
+    nvme_buf_ptr dev_buffer = AllocateDeviceBuffer(alloc_size);
 
-	// Copy user data into the aligned buffer at the correct offset
-	memcpy((char *)dev_buffer + ctx.offset, buffer, ctx.nr_bytes);
+    if (ctx.offset > 0 || ctx.nr_bytes < alloc_size) {
+        // Partial write logic (Read-Modify-Write)
+        uint32_t nsid = xnvme_dev_get_nsid(device);
+        xnvme_cmd_ctx read_ctx = xnvme_cmd_ctx_from_dev(device);
+        read_ctx.cmd.common.cdw12 = ctx.nr_lbas - 1;
 
-	uint32_t nsid = xnvme_dev_get_nsid(device);
-	uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
-	xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
+        int err = xnvme_nvm_read(&read_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
+        if (err) {
+            FreeDeviceBuffer(dev_buffer, alloc_size);
+            throw IOException("Read-modify-write failed");
+        }
+    }
 
-	PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, DATA_PLACEMENT_MODE, true);
+    memcpy((char *)dev_buffer + ctx.offset, buffer, ctx.nr_bytes);
 
-	int err = xnvme_nvm_write(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
-	if (err) {
-		FreeDeviceBuffer(dev_buffer);
-		xnvme_cli_perr("Could not write to device with xnvme_nvme_write(): ", err);
-		throw IOException("Encountered error when writing to NVMe device");
-	}
+    uint32_t nsid = xnvme_dev_get_nsid(device);
+    uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
+    xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
 
-	FreeDeviceBuffer(dev_buffer);
+    PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, DATA_PLACEMENT_MODE, true);
+
+    int err = xnvme_nvm_write(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
+    if (err) {
+        FreeDeviceBuffer(dev_buffer, alloc_size);
+        xnvme_cli_perr("xnvme_nvm_write failed", err);
+        throw IOException("Write failed");
+    }
+
+    FreeDeviceBuffer(dev_buffer, alloc_size);
 }
 
 void NvmeDevice::Read(void *buffer, const CmdContext &context) {
-	if (async) {
-		ReadAsync(buffer, context);
-		return;
-	}
+    if (async) {
+        ReadAsync(buffer, context);
+        return;
+    }
 
-	const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
-	D_ASSERT(ctx.nr_lbas > 0);
-	// We only support offset reads within a single block
-	D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
+    const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
+    D_ASSERT(ctx.nr_lbas > 0);
 
-	idx_t alloc_size = ctx.nr_lbas * geometry.lba_size;
-	nvme_buf_ptr dev_buffer = AllocateDeviceBuffer(alloc_size);
+    idx_t alloc_size = ctx.nr_lbas * geometry.lba_size;
 
-	uint32_t nsid = xnvme_dev_get_nsid(device);
-	uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
-	xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
+    // --- ZERO COPY CHECK ---
+    bool is_aligned = (ctx.offset == 0 && ctx.nr_bytes == alloc_size);
+    bool is_dma_safe = memory_manager->IsManaged(buffer, ctx.nr_bytes);
 
-	PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, 0, false);
+    if (is_aligned && is_dma_safe) {
+        uint32_t nsid = xnvme_dev_get_nsid(device);
+        uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
+        xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
 
-	int err = xnvme_nvm_read(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
+        PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, 0, false);
 
-	if (err) {
-		FreeDeviceBuffer(dev_buffer);
-		xnvme_cli_perr("Could not write to device with xnvme_nvme_write(): ", err);
-		throw IOException("Encountered error when writing to NVMe device");
-	}
+        int err = xnvme_nvm_read(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, buffer, nullptr);
+        if (err) {
+            xnvme_cli_perr("xnvme_nvm_read failed (Zero-Copy)", err);
+            throw IOException("Read failed");
+        }
+        return;
+    }
+    // -----------------------
 
-	memcpy(buffer, (char *)dev_buffer + ctx.offset, ctx.nr_bytes);
+    // SLOW PATH: Bounce Buffer
+    nvme_buf_ptr dev_buffer = AllocateDeviceBuffer(alloc_size);
 
-	FreeDeviceBuffer(dev_buffer);
+    uint32_t nsid = xnvme_dev_get_nsid(device);
+    uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
+    xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
+
+    PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, 0, false);
+
+    int err = xnvme_nvm_read(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
+    if (err) {
+        FreeDeviceBuffer(dev_buffer, alloc_size);
+        xnvme_cli_perr("xnvme_nvm_read failed", err);
+        throw IOException("Read failed");
+    }
+
+    memcpy(buffer, (char *)dev_buffer + ctx.offset, ctx.nr_bytes);
+    FreeDeviceBuffer(dev_buffer, alloc_size);
 }
 
 DeviceGeometry NvmeDevice::GetDeviceGeometry() {
@@ -147,8 +182,8 @@ nvme_buf_ptr NvmeDevice::AllocateDeviceBuffer(idx_t nr_bytes) {
 	return memory_manager->Allocate(nr_bytes);
 }
 
-void NvmeDevice::FreeDeviceBuffer(nvme_buf_ptr buffer) {
-	memory_manager->Free(buffer);
+void NvmeDevice::FreeDeviceBuffer(nvme_buf_ptr buffer, idx_t size) {
+	memory_manager->Free(buffer, size);
 }
 
 DeviceGeometry NvmeDevice::LoadDeviceGeometry() {
@@ -220,7 +255,6 @@ void NvmeDevice::ReadAsync(void *buffer, const CmdContext &context) {
 	D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
 
 	nvme_buf_ptr dev_buffer = AllocateDeviceBuffer(ctx.nr_bytes);
-
 	uint32_t nsid = xnvme_dev_get_nsid(device);
 	uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
 
@@ -261,7 +295,8 @@ void NvmeDevice::ReadAsync(void *buffer, const CmdContext &context) {
 
 	memcpy(buffer, dev_buffer + ctx.offset, ctx.nr_bytes);
 
-	FreeDeviceBuffer(dev_buffer);
+	idx_t alloc_size = ctx.nr_lbas * geometry.lba_size;
+	FreeDeviceBuffer(dev_buffer, alloc_size);
 }
 
 void NvmeDevice::WriteAsync(void *buffer, const CmdContext &context) {
@@ -312,7 +347,8 @@ void NvmeDevice::WriteAsync(void *buffer, const CmdContext &context) {
 		status = fut.wait_for(interval);
 	} while (status != std::future_status::ready);
 
-	FreeDeviceBuffer(dev_buffer);
+	idx_t alloc_size = ctx.nr_lbas * geometry.lba_size;
+	FreeDeviceBuffer(dev_buffer, alloc_size);
 }
 
 void NvmeDevice::PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_ctx, idx_t plid_idx, idx_t dtype,
