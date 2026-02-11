@@ -61,19 +61,22 @@ void NvmeDevice::Write(void *buffer, const CmdContext &context) {
 	bool is_aligned = (ctx.offset == 0 && ctx.nr_bytes == alloc_size);
 	bool is_dma_safe = memory_manager->IsManaged(buffer, ctx.nr_bytes);
 
+	uint32_t nsid = xnvme_dev_get_nsid(device);
+	xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
+
 	if (is_aligned && is_dma_safe) {
 		// FAST PATH: Zero-Copy
-		uint32_t nsid = xnvme_dev_get_nsid(device);
 		uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
-		xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
 
 		PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, DATA_PLACEMENT_MODE, true);
 
 		int err = xnvme_nvm_write(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, buffer, nullptr);
+		
 		if (err) {
 			xnvme_cli_perr("xnvme_nvm_write failed (Zero-Copy)", err);
 			throw IOException("Write failed");
 		}
+
 		return;
 	}
 	// -----------------------
@@ -83,22 +86,20 @@ void NvmeDevice::Write(void *buffer, const CmdContext &context) {
 
 	if (ctx.offset > 0 || ctx.nr_bytes < alloc_size) {
 		// Partial write logic (Read-Modify-Write)
-		uint32_t nsid = xnvme_dev_get_nsid(device);
 		xnvme_cmd_ctx read_ctx = xnvme_cmd_ctx_from_dev(device);
 		read_ctx.cmd.common.cdw12 = ctx.nr_lbas - 1;
 
 		int err = xnvme_nvm_read(&read_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
 		if (err) {
 			FreeDeviceBuffer(dev_buffer, alloc_size);
+			xnvme_cli_perr("xnvme_nvm_write failed", err);
 			throw IOException("Read-modify-write failed");
 		}
 	}
 
 	memcpy((char *)dev_buffer + ctx.offset, buffer, ctx.nr_bytes);
 
-	uint32_t nsid = xnvme_dev_get_nsid(device);
 	uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
-	xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
 
 	PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, DATA_PLACEMENT_MODE, true);
 
@@ -126,14 +127,13 @@ void NvmeDevice::Read(void *buffer, const CmdContext &context) {
 	// --- ZERO COPY CHECK ---
 	bool is_aligned = (ctx.offset == 0 && ctx.nr_bytes == alloc_size);
 	bool is_dma_safe = memory_manager->IsManaged(buffer, ctx.nr_bytes);
+	uint32_t nsid = xnvme_dev_get_nsid(device);
+	xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
+	uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
+	
+	PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, 0, false);
 
 	if (is_aligned && is_dma_safe) {
-		uint32_t nsid = xnvme_dev_get_nsid(device);
-		uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
-		xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
-
-		PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, 0, false);
-
 		int err = xnvme_nvm_read(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, buffer, nullptr);
 		if (err) {
 			xnvme_cli_perr("xnvme_nvm_read failed (Zero-Copy)", err);
@@ -141,16 +141,9 @@ void NvmeDevice::Read(void *buffer, const CmdContext &context) {
 		}
 		return;
 	}
-	// -----------------------
 
 	// SLOW PATH: Bounce Buffer
 	nvme_buf_ptr dev_buffer = AllocateDeviceBuffer(alloc_size);
-
-	uint32_t nsid = xnvme_dev_get_nsid(device);
-	uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
-	xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
-
-	PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, 0, false);
 
 	int err = xnvme_nvm_read(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
 	if (err) {
