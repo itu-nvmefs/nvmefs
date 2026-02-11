@@ -1,11 +1,11 @@
 #include "device.hpp"
 
 namespace duckdb {
-idx_t Device::Write(void *buffer, const CmdContext &context) {
+void Device::Write(void *buffer, const CmdContext &context) {
 	throw NotImplementedException("%s: Write is not implemented", GetName());
 }
 
-idx_t Device::Read(void *buffer, const CmdContext &context) {
+void Device::Read(void *buffer, const CmdContext &context) {
 	throw NotImplementedException("%s: Read is not implemented", GetName());
 }
 

@@ -1,6 +1,12 @@
 SECRET_FILE="$HOME/.duckdb/stored_secrets/nvmefs.duckdb_secret"
 SCRIPT_DIR="../../scripts/nvme"
 
+if [[ $EUID -ne 0 ]]; then
+   echo "This benchmark script must be run with elevated permissions (sudo)."
+   exit 1
+fi
+
+
 secret_cleanup() {
     rm -f "$SECRET_FILE"
 }

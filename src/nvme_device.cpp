@@ -18,6 +18,8 @@ NvmeDevice::NvmeDevice(const string &device_path, const string &backend, const b
 		// Set the callback function for completed commands. No callback arguments, hence last argument equal to NULL
 	}
 
+	memory_manager = make_uniq<NvmeMemoryManager>(device);
+
 	fdp = CheckFDP();
 
 	if (fdp) {
@@ -30,6 +32,10 @@ NvmeDevice::NvmeDevice(const string &device_path, const string &backend, const b
 }
 
 NvmeDevice::~NvmeDevice() {
+	if (memory_manager) {
+        memory_manager.reset();
+    }
+	
 	if (async) {
 		for (const auto &queue : queues) {
 			xnvme_queue_term(queue);
@@ -138,11 +144,11 @@ uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
 }
 
 nvme_buf_ptr NvmeDevice::AllocateDeviceBuffer(idx_t nr_bytes) {
-	return xnvme_buf_alloc(device, nr_bytes);
+	return memory_manager->Allocate(nr_bytes);
 }
 
 void NvmeDevice::FreeDeviceBuffer(nvme_buf_ptr buffer) {
-	xnvme_buf_free(device, buffer);
+	memory_manager->Free(buffer);
 }
 
 DeviceGeometry NvmeDevice::LoadDeviceGeometry() {

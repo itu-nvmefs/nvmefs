@@ -8,6 +8,7 @@
 #include <mutex>
 #include <future>
 #include <chrono>
+#include "nvme_memory_manager.hpp"
 
 namespace duckdb {
 
@@ -100,6 +101,8 @@ private:
 	const idx_t max_threads;
 	atomic<idx_t> thread_id_counter;
 	static thread_local optional_idx index;
+
+	unique_ptr<NvmeMemoryManager> memory_manager;
 };
 
 } // namespace duckdb
