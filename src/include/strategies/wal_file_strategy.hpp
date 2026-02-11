@@ -10,84 +10,88 @@ struct GlobalMetadata;
 
 class WALFileStrategy : public FileMetadataStrategy {
 public:
-    WALFileStrategy(GlobalMetadata *metadata, atomic<idx_t> &wal_location)
-        : metadata(metadata), wal_location(wal_location) {}
+	WALFileStrategy(GlobalMetadata *metadata, atomic<idx_t> &wal_location)
+	    : metadata(metadata), wal_location(wal_location) {
+	}
 
-    idx_t GetLBA(const string &filename, idx_t nr_bytes, idx_t location, idx_t nr_lbas, const DeviceGeometry &geo) override {
-        idx_t lba_offset = location / geo.lba_size;
-        return metadata->wal_start + lba_offset;
-    }
+	idx_t GetLBA(const string &filename, idx_t nr_bytes, idx_t location, idx_t nr_lbas,
+	             const DeviceGeometry &geo) override {
+		idx_t lba_offset = location / geo.lba_size;
+		return metadata->wal_start + lba_offset;
+	}
 
-    bool FileExists(const string &filename) override {
-        // WAL exists if it matches the database path
-        return true; // WAL is always associated with the database
-    }
+	bool FileExists(const string &filename) override {
+		// WAL exists if it matches the database path
+		return true; // WAL is always associated with the database
+	}
 
-    idx_t GetFileSizeLBA(const string &filename) override {
-        return wal_location.load() - metadata->wal_start;
-    }
+	idx_t GetFileSizeLBA(const string &filename) override {
+		return wal_location.load() - metadata->wal_start;
+	}
 
-    void Truncate(const string &filename, idx_t new_size) override {
-        DeviceGeometry geo = {4096, 0};
-        idx_t nr_lbas = (new_size + geo.lba_size - 1) / geo.lba_size;
-        idx_t expected_location = wal_location.load();
-        idx_t new_location = metadata->wal_start + nr_lbas;
+	void Truncate(const string &filename, idx_t new_size) override {
+		DeviceGeometry geo = {4096, 0};
+		idx_t nr_lbas = (new_size + geo.lba_size - 1) / geo.lba_size;
+		idx_t expected_location = wal_location.load();
+		idx_t new_location = metadata->wal_start + nr_lbas;
 
-        while (!wal_location.compare_exchange_weak(expected_location, new_location))
-            ;
-    }
+		while (!wal_location.compare_exchange_weak(expected_location, new_location))
+			;
+	}
 
-    void RemoveFile(const string &filename) override {
-        // Reset the location pointer to the start, effectively removing the WAL
-        wal_location.store(metadata->wal_start);
-    }
+	void RemoveFile(const string &filename) override {
+		// Reset the location pointer to the start, effectively removing the WAL
+		wal_location.store(metadata->wal_start);
+	}
 
-    idx_t GetSeekBound(const string &filename, const DeviceGeometry &geo) override {
-        return ((metadata->tmp_start - 1) - metadata->wal_start) * geo.lba_size;
-    }
+	idx_t GetSeekBound(const string &filename, const DeviceGeometry &geo) override {
+		return ((metadata->tmp_start - 1) - metadata->wal_start) * geo.lba_size;
+	}
 
-    bool IsLBAInRange(const string &filename, idx_t start_lba, idx_t lba_count, const DeviceGeometry &geo) override {
-        idx_t current_start = metadata->wal_start;
-        idx_t current_end = metadata->tmp_start - 1;
+	bool IsLBAInRange(const string &filename, idx_t start_lba, idx_t lba_count, const DeviceGeometry &geo) override {
+		idx_t current_start = metadata->wal_start;
+		idx_t current_end = metadata->tmp_start - 1;
 
-        if (start_lba < current_start) return false;
-        
-        // Fix: Subtract 1
-        if (lba_count > 0 && (start_lba + lba_count - 1) > current_end) {
-            return false;
-        }
-        return true;
-    }
+		if (start_lba < current_start) {
+			return false;
+		}
 
-    void UpdateMetadata(const CmdContext &context) override {
-        const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
-        idx_t expected_location = wal_location.load();
-        idx_t new_location = ctx.start_lba + ctx.nr_lbas;
+		// Fix: Subtract 1
+		if (lba_count > 0 && (start_lba + lba_count - 1) > current_end) {
+			return false;
+		}
+		return true;
+	}
 
-        do {
-            if (new_location < expected_location) {
-                break;
-            }
-        } while (!wal_location.compare_exchange_weak(expected_location, new_location));
-    }
+	void UpdateMetadata(const CmdContext &context) override {
+		const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
+		idx_t expected_location = wal_location.load();
+		idx_t new_location = ctx.start_lba + ctx.nr_lbas;
 
-    void CreateFile(const string &filename) override {
-        // WAL file is created through metadata initialization
-    }
+		do {
+			if (new_location < expected_location) {
+				break;
+			}
+		} while (!wal_location.compare_exchange_weak(expected_location, new_location));
+	}
 
-    void ListFiles(const string &directory, const std::function<void(const string &, bool)> &callback) override {
-        // WAL files are listed at the filesystem level
-    }
+	void CreateFile(const string &filename) override {
+		// WAL file is created through metadata initialization
+	}
 
-    optional_idx GetAvailableSpace(const DeviceGeometry &geo) override {
-        idx_t wal_max_bytes = ((metadata->tmp_start - 1) - metadata->wal_start) * geo.lba_size;
-        idx_t wal_used_bytes = (wal_location.load() - metadata->wal_start) * geo.lba_size;
-        return wal_max_bytes - wal_used_bytes;
-    }
+	void ListFiles(const string &directory, const std::function<void(const string &, bool)> &callback) override {
+		// WAL files are listed at the filesystem level
+	}
+
+	optional_idx GetAvailableSpace(const DeviceGeometry &geo) override {
+		idx_t wal_max_bytes = ((metadata->tmp_start - 1) - metadata->wal_start) * geo.lba_size;
+		idx_t wal_used_bytes = (wal_location.load() - metadata->wal_start) * geo.lba_size;
+		return wal_max_bytes - wal_used_bytes;
+	}
 
 private:
-    GlobalMetadata *metadata;
-    atomic<idx_t> &wal_location;
+	GlobalMetadata *metadata;
+	atomic<idx_t> &wal_location;
 };
 
 } // namespace duckdb

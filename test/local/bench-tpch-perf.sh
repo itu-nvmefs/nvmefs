@@ -2,7 +2,7 @@
 source ./common.sh
 
 # Define output file
-OUTPUT_FILE="sf30-comparison-perf-final2.csv"
+OUTPUT_FILE="sf30-comparison-perf-realfinal.csv"
 
 # Initialize CSV with header
 echo "Version,Query,Iteration,DTLB_Misses,LLC_Misses,Duration" > "$OUTPUT_FILE"
@@ -10,7 +10,7 @@ echo "Version,Query,Iteration,DTLB_Misses,LLC_Misses,Duration" > "$OUTPUT_FILE"
 # List of queries to benchmark
 QUERIES=("9" "10" "13" "18" "21" "1")
 # Map versions to their respective binary paths
-VERSIONS=("new", "old")
+VERSIONS=("new" "old")
 
 for query in "${QUERIES[@]}"; do
     echo "-------------------------------------------------------"

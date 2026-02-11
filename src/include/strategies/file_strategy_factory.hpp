@@ -10,24 +10,22 @@ namespace duckdb {
 
 class FileStrategyFactory {
 public:
-    static FileMetadataStrategy* GetStrategy(const string &filename,
-                                             GlobalMetadata *metadata,
-                                             atomic<idx_t> &db_location,
-                                             atomic<idx_t> &wal_location,
-                                             unique_ptr<TemporaryFileMetadataManager> &temp_manager) {
-        NvmeFileType type = NvmePathHandler::GetFileType(filename);
+	static FileMetadataStrategy *GetStrategy(const string &filename, GlobalMetadata *metadata,
+	                                         atomic<idx_t> &db_location, atomic<idx_t> &wal_location,
+	                                         unique_ptr<TemporaryFileMetadataManager> &temp_manager) {
+		NvmeFileType type = NvmePathHandler::GetFileType(filename);
 
-        switch (type) {
-        case NvmeFileType::DATABASE:
-            return new DatabaseFileStrategy(metadata, db_location);
-        case NvmeFileType::WAL:
-            return new WALFileStrategy(metadata, wal_location);
-        case NvmeFileType::TEMPORARY:
-            return new TemporaryFileStrategy(metadata, temp_manager);
-        default:
-            throw InvalidInputException("Unknown file type for: %s", filename);
-        }
-    }
+		switch (type) {
+		case NvmeFileType::DATABASE:
+			return new DatabaseFileStrategy(metadata, db_location);
+		case NvmeFileType::WAL:
+			return new WALFileStrategy(metadata, wal_location);
+		case NvmeFileType::TEMPORARY:
+			return new TemporaryFileStrategy(metadata, temp_manager);
+		default:
+			throw InvalidInputException("Unknown file type for: %s", filename);
+		}
+	}
 };
 
 } // namespace duckdb

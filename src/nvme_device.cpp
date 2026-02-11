@@ -42,8 +42,8 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 
 NvmeDevice::~NvmeDevice() {
 	if (memory_manager) {
-        memory_manager.reset();
-    }
+		memory_manager.reset();
+	}
 
 	for (const auto &queue : queues) {
 		xnvme_queue_term(queue);
