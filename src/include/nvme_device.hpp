@@ -59,6 +59,10 @@ public:
 	string GetName() const {
 		return "NvmeDevice";
 	}
+	
+	NvmeMemoryManager* GetMemoryManager() {
+        return memory_manager.get();
+    }
 
 private:
 	/// @brief Determines which placment handler should be used for the given path
@@ -73,7 +77,7 @@ private:
 
 	/// @brief Frees the given device buffer
 	/// @param buffer The device buffer to free
-	void FreeDeviceBuffer(nvme_buf_ptr buffer);
+	void FreeDeviceBuffer(nvme_buf_ptr buffer, idx_t size);
 
 	/// @brief Loads the geometry of the decvice
 	/// @return The device geometry

@@ -48,7 +48,7 @@ NvmeDevice::~NvmeDevice() {
 	for (const auto &queue : queues) {
 		xnvme_queue_term(queue);
 	}
-	
+
 	xnvme_dev_close(device);
 }
 
@@ -71,8 +71,8 @@ nvme_buf_ptr NvmeDevice::AllocateDeviceBuffer(idx_t nr_bytes) {
 	return memory_manager->Allocate(nr_bytes);
 }
 
-void NvmeDevice::FreeDeviceBuffer(nvme_buf_ptr buffer) {
-	memory_manager->Free(buffer);
+void NvmeDevice::FreeDeviceBuffer(nvme_buf_ptr buffer, idx_t size) {
+	memory_manager->Free(buffer, size);
 }
 
 DeviceGeometry NvmeDevice::LoadDeviceGeometry() {

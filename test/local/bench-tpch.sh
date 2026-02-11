@@ -1,7 +1,7 @@
 #!/bin/bash
 source ./common.sh
 
-OUTPUT="sf30-old-fixed.csv"
+OUTPUT="sf30-final.csv"
 
 echo "Version,Query,Iteration,Duration" > $OUTPUT
 
