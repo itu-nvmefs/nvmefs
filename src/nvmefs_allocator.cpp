@@ -8,44 +8,22 @@
 
 namespace duckdb {
 
-// Define the static wrapper functions
-// We must define these here to match the declarations in the header
-
 void NvmeAllocator::OverwriteGlobal(DatabaseInstance &instance, NvmeFileSystem *nvme_fs) {
-
-	if (!nvme_fs) {
-		std::cout << "NvmeAllocator: Null filesystem passed.\n";
-		return;
-	}
-
-	// Get the device and then the manager
-	// Note: Assuming GetDevice() returns a reference to NvmeDevice or Device
-	auto &device_base = nvme_fs->GetDevice();
-	auto &device = (NvmeDevice &)device_base; // Downcast to NvmeDevice
+	auto &device = static_cast<NvmeDevice&>(nvme_fs->GetDevice());
 
 	NvmeMemoryManager *manager = device.GetMemoryManager();
-
-	if (!manager) {
-		// Should not happen if FS initialized correctly
-		std::cout << "no manager found \n";
-		return;
-	}
-
-	// 2. Perform the Swap (The "Magic")
-	// Get the configuration object where the allocator lives
 	DBConfig &config = DBConfig::GetConfig(instance);
 
 	Allocator *global_allocator = config.allocator.get();
 
 	if (!global_allocator) {
-		std::cout << "no allocator found \n";
-		return;
+		throw InternalException("Global allocator is not set. Cannot overwrite with NvmeAllocator.");
 	}
 
 	global_allocator->~Allocator();
 
-	// 3. Construct the NEW object at the SAME memory address
-	// This effectively "hot-patches" the object that BufferManager is using.
+	// construct the new object at the same  memory address
+	// this effectively "hot-patches" the object that BufferManager is using
 	new (global_allocator) Allocator(NvmeAllocator::Allocate, NvmeAllocator::Free, NvmeAllocator::Reallocate,
 	                                 make_uniq<NvmeAllocatorData>(manager));
 }
@@ -64,8 +42,6 @@ data_ptr_t NvmeAllocator::Allocate(PrivateAllocatorData *private_data, idx_t siz
 void NvmeAllocator::Free(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t size) {
 	auto *data = (NvmeAllocatorData *)private_data;
 
-	// Hot-swap safety: Check if pointer belongs to our Hugepages
-	// If it does, return it to our pool. If not (allocated before swap), system free.
 	if (size >= 4096 && data->manager->IsManaged(pointer, size)) {
 		data->manager->Free(pointer, size);
 	} else {

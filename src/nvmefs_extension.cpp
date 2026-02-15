@@ -65,17 +65,10 @@ static void AddConfig(DatabaseInstance &instance) {
 	// Add extension options
 	if (!nvmeConfig.device_path.empty()) {
 		auto &fs = instance.GetFileSystem();
-		// 1. Create the FileSystem
 		auto nvmefs_ptr = make_uniq<NvmeFileSystem>(nvmeConfig);
 
-		// 2. Keep a raw pointer to it BEFORE moving ownership
-		NvmeFileSystem *fs_raw_ptr = nvmefs_ptr.get();
-
-		// 3. Register it (ownership moves to DuckDB)
 		fs.RegisterSubSystem(std::move(nvmefs_ptr));
-
-		// 4. NOW call the allocator swap using the pointer we saved
-		NvmeAllocator::OverwriteGlobal(instance, fs_raw_ptr);
+		NvmeAllocator::OverwriteGlobal(instance, nvmefs_ptr.get());
 	} else {
 		duckdb::Printer::Print(
 		    "Nvmefs extension loaded but no nvme_device_path specified. NvmeFileSystem will not be registered.");
