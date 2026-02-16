@@ -23,7 +23,7 @@ struct NvmeCmdContext : public CmdContext {
 
 class NvmeDevice : public Device {
 public:
-	NvmeDevice(const string &device_path, const string &backend, const bool async, const idx_t max_threads);
+	NvmeDevice(const string &device_path, const string &backend, const idx_t max_threads);
 	~NvmeDevice();
 
 	/// @brief Writes data from the input buffer to the device at the specified LBA position
@@ -79,9 +79,6 @@ private:
 
 	static void CommandCallback(struct xnvme_cmd_ctx *ctx, void *cb_args);
 
-	idx_t ReadAsync(void *buffer, const CmdContext &context);
-	idx_t WriteAsync(void *buffer, const CmdContext &context);
-
 	void PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_ctx, idx_t plid_idx, idx_t dtype, bool write);
 	bool CheckFDP();
 	void InitializePlacementHandles();
@@ -94,7 +91,6 @@ private:
 	const string dev_path;
 	DeviceGeometry geometry;
 	const string backend;
-	const bool async;
 	bool fdp;
 	vector<xnvme_queue *> queues;
 	const idx_t max_threads;
