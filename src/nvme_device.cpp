@@ -2,8 +2,8 @@
 
 namespace duckdb {
 thread_local optional_idx NvmeDevice::index = optional_idx();
-NvmeDevice::NvmeDevice(const string &device_path, const string &backend, const bool async, const idx_t max_threads)
-	: dev_path(device_path), backend(backend), async(async), max_threads(max_threads) {
+NvmeDevice::NvmeDevice(const string &device_path, const string &backend, const idx_t max_threads)
+	: dev_path(device_path), backend(backend), max_threads(max_threads) {
 	xnvme_opts opts = xnvme_opts_default();
 	PrepareOpts(opts);
 	device = xnvme_dev_open(device_path.c_str(), &opts);
@@ -13,10 +13,8 @@ NvmeDevice::NvmeDevice(const string &device_path, const string &backend, const b
 	}
 
 	// Initialize the xnvme queue for asynchronous IO
-	if (async) {
-		queues = vector<xnvme_queue *>(max_threads, nullptr);
-		// Set the callback function for completed commands. No callback arguments, hence last argument equal to NULL
-	}
+	// Set the callback function for completed commands. No callback arguments, hence last argument equal to NULL
+	queues = vector<xnvme_queue *>(max_threads, nullptr);
 
 	fdp = CheckFDP();
 
@@ -24,104 +22,17 @@ NvmeDevice::NvmeDevice(const string &device_path, const string &backend, const b
 		InitializePlacementHandles();
 	}
 
+
 	GetThreadIndex();
 	allocated_placement_identifiers["nvmefs:///tmp"] = 1;
 	geometry = LoadDeviceGeometry();
 }
 
 NvmeDevice::~NvmeDevice() {
-	if (async) {
 		for (const auto &queue : queues) {
 			xnvme_queue_term(queue);
 		}
-	}
 	xnvme_dev_close(device);
-}
-
-idx_t NvmeDevice::Write(void *buffer, const CmdContext &context) {
-	if (async) {
-		return WriteAsync(buffer, context);
-	}
-
-	const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
-	D_ASSERT(ctx.nr_lbas > 0);
-	D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
-
-	// FIX: Allocate based on LBA size
-	idx_t alloc_size = ctx.nr_lbas * geometry.lba_size;
-	nvme_buf_ptr dev_buffer = AllocateDeviceBuffer(alloc_size);
-
-	if (ctx.offset > 0 || ctx.nr_bytes < alloc_size) {
-		// Partial block write: We must read the existing block first to preserve surrounding data
-		// NOTE: We cannot use 'Read' here recursively if we want to avoid extra allocs,
-		// but for simplicity, let's just ensure we fill the buffer with existing data.
-
-		// Manual read to avoid recursion loop or just use the raw xnvme call:
-		uint32_t nsid = xnvme_dev_get_nsid(device);
-		xnvme_cmd_ctx read_ctx = xnvme_cmd_ctx_from_dev(device);
-		// Prepare read ctx... (simplified)
-		read_ctx.cmd.common.cdw12 = ctx.nr_lbas - 1;
-
-		int err = xnvme_nvm_read(&read_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
-		if (err) {
-			FreeDeviceBuffer(dev_buffer);
-			throw IOException("Read-modify-write failed");
-		}
-	}
-
-	// Copy user data into the aligned buffer at the correct offset
-	memcpy((char *)dev_buffer + ctx.offset, buffer, ctx.nr_bytes);
-
-	uint32_t nsid = xnvme_dev_get_nsid(device);
-	uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
-	xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
-
-	PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, DATA_PLACEMENT_MODE, true);
-
-	int err = xnvme_nvm_write(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
-	if (err) {
-		FreeDeviceBuffer(dev_buffer);
-		xnvme_cli_perr("Could not write to device with xnvme_nvme_write(): ", err);
-		throw IOException("Encountered error when writing to NVMe device");
-	}
-
-	FreeDeviceBuffer(dev_buffer);
-
-	return ctx.nr_lbas;
-}
-
-idx_t NvmeDevice::Read(void *buffer, const CmdContext &context) {
-	if (async) {
-		return ReadAsync(buffer, context);
-	}
-
-	const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
-	D_ASSERT(ctx.nr_lbas > 0);
-	// We only support offset reads within a single block
-	D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
-
-	idx_t alloc_size = ctx.nr_lbas * geometry.lba_size;
-	nvme_buf_ptr dev_buffer = AllocateDeviceBuffer(alloc_size);
-
-	uint32_t nsid = xnvme_dev_get_nsid(device);
-	uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
-	xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
-
-	PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, 0, false);
-
-	int err = xnvme_nvm_read(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
-
-	if (err) {
-		FreeDeviceBuffer(dev_buffer);
-		xnvme_cli_perr("Could not write to device with xnvme_nvme_write(): ", err);
-		throw IOException("Encountered error when writing to NVMe device");
-	}
-
-	memcpy(buffer, (char *)dev_buffer + ctx.offset, ctx.nr_bytes);
-
-	FreeDeviceBuffer(dev_buffer);
-
-	return ctx.nr_lbas;
 }
 
 DeviceGeometry NvmeDevice::GetDeviceGeometry() {
@@ -159,22 +70,6 @@ DeviceGeometry NvmeDevice::LoadDeviceGeometry() {
 	return geometry;
 }
 
-// void NvmeDevice::PrepareOpts(xnvme_opts &opts) {
-//	if (StringUtil::Equals(this->backend.data(), "spdk")) {
-//		opts.be = "spdk";
-//		return;
-//	}
-//
-//	if (this->async) {
-//		opts.async = this->backend.data();
-//		if (StringUtil::Equals(this->backend.data(), "io_uring_cmd")) {
-//			opts.sync = "nvme";
-//		}
-//	} else {
-//		opts.sync = this->backend.data();
-//	}
-// }
-
 void NvmeDevice::PrepareOpts(xnvme_opts &opts) {
 	// SPDK backend handles async/sync internally - don't set opts.async or opts.sync
 	if (StringUtil::Contains(this->backend, "spdk")) {
@@ -183,15 +78,11 @@ void NvmeDevice::PrepareOpts(xnvme_opts &opts) {
 		return;
 	}
 
-	// For non-SPDK backends, set async or sync appropriately
-	if (this->async) {
-		opts.async = this->backend.data();
-		if (StringUtil::Equals(this->backend.data(), "io_uring_cmd")) {
-			opts.sync = "nvme";
-		}
-	} else {
-		opts.sync = this->backend.data();
+	opts.async = this->backend.data();
+	if (StringUtil::Equals(this->backend.data(), "io_uring_cmd")) {
+		opts.sync = "nvme";
 	}
+	
 }
 
 void NvmeDevice::CommandCallback(struct xnvme_cmd_ctx *ctx, void *cb_args) {
@@ -209,7 +100,7 @@ void NvmeDevice::CommandCallback(struct xnvme_cmd_ctx *ctx, void *cb_args) {
 	notifier->set_value();
 }
 
-idx_t NvmeDevice::ReadAsync(void *buffer, const CmdContext &context) {
+idx_t NvmeDevice::Read(void *buffer, const CmdContext &context) {
 	const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
 	D_ASSERT(ctx.nr_lbas > 0);
 	// We only support offset reads within a single block
@@ -271,7 +162,7 @@ idx_t NvmeDevice::ReadAsync(void *buffer, const CmdContext &context) {
 	return ctx.nr_lbas;
 }
 
-idx_t NvmeDevice::WriteAsync(void *buffer, const CmdContext &context) {
+idx_t NvmeDevice::Write(void *buffer, const CmdContext &context) {
 	const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
 	D_ASSERT(ctx.nr_lbas > 0);
 	D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
