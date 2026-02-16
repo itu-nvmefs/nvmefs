@@ -69,8 +69,8 @@ static void AddConfig(DatabaseInstance &instance) {
 	} else {
 		duckdb::Printer::Print(
 		    "Nvmefs extension loaded but no nvme_device_path specified. NvmeFileSystem will not be registered.");
-		duckdb::Printer::Print(
-		    "To use the NvmeFileSystem, set the 'nvme_device_path' configuration option to the path of the NVMe device and restart the database.");
+		duckdb::Printer::Print("To use the NvmeFileSystem, set the 'nvme_device_path' configuration option to the path "
+		                       "of the NVMe device and restart the database.");
 	}
 }
 
