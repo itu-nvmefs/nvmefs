@@ -109,11 +109,18 @@ void NvmeDevice::CommandCallback(struct xnvme_cmd_ctx *ctx, void *cb_args) {
 
 void NvmeDevice::Read(void *buffer, const CmdContext &context) {
 	const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
+	D_ASSERT(ctx.nr_lbas > 0);
+	// We only support offset reads within a single block
+	D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
+
 	io_engine->Read(buffer, ctx);
 }
 
 void NvmeDevice::Write(void *buffer, const CmdContext &context) {
 	const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
+	D_ASSERT(ctx.nr_lbas > 0);
+	D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
+
 	io_engine->Write(buffer, ctx);
 }
 

@@ -9,12 +9,7 @@ class NvmeAsyncIOEngine : public NvmeIOEngine {
 public:
 	using NvmeIOEngine::NvmeIOEngine;
 
-	void Read(void *buffer, const NvmeCmdContext &context) override {
-		const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
-		D_ASSERT(ctx.nr_lbas > 0);
-		// We only support offset reads within a single block
-		D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
-
+	void Read(void *buffer, const NvmeCmdContext &ctx) override {
 		// Allocate based on LBA size (aligned), not user request size
 		// Using nr_bytes causes buffer overflow if it is smaller than the full LBA size
 		idx_t alloc_size = ctx.nr_lbas * device.geometry.lba_size;
@@ -37,7 +32,7 @@ public:
 		}
 
 		xnvme_cmd_ctx *xnvme_ctx = xnvme_queue_get_cmd_ctx(queue);
-		device.PrepareIOCmdContext(xnvme_ctx, context, plid_idx, 0, false);
+		device.PrepareIOCmdContext(xnvme_ctx, ctx, plid_idx, 0, false);
 
 		std::promise<void> cb_notify;
 		std::future<void> fut = cb_notify.get_future();
@@ -64,11 +59,7 @@ public:
 		device.FreeDeviceBuffer(dev_buffer);
 	}
 
-	void Write(void *buffer, const NvmeCmdContext &context) override {
-		const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
-		D_ASSERT(ctx.nr_lbas > 0);
-		D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
-
+	void Write(void *buffer, const NvmeCmdContext &ctx) override {
 		//  Allocate based on LBA size
 		idx_t alloc_size = ctx.nr_lbas * device.geometry.lba_size;
 		nvme_buf_ptr dev_buffer = device.AllocateDeviceBuffer(alloc_size);
@@ -107,7 +98,7 @@ public:
 		}
 
 		xnvme_cmd_ctx *xnvme_ctx = xnvme_queue_get_cmd_ctx(queue);
-		device.PrepareIOCmdContext(xnvme_ctx, context, plid_idx, DATA_PLACEMENT_MODE, true);
+		device.PrepareIOCmdContext(xnvme_ctx, ctx, plid_idx, DATA_PLACEMENT_MODE, true);
 
 		std::promise<void> cb_notify;
 		std::future<void> fut = cb_notify.get_future();

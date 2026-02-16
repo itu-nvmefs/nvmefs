@@ -9,12 +9,7 @@ class NvmeSyncIOEngine : public NvmeIOEngine {
 public:
 	using NvmeIOEngine::NvmeIOEngine;
 
-	void Read(void *buffer, const NvmeCmdContext &context) override {
-		const NvmeCmdContext &ctx = context;
-		D_ASSERT(ctx.nr_lbas > 0);
-		// We only support offset reads within a single block
-		D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
-
+	void Read(void *buffer, const NvmeCmdContext &ctx) override {
 		idx_t alloc_size = ctx.nr_lbas * device.geometry.lba_size;
 		nvme_buf_ptr dev_buffer = device.AllocateDeviceBuffer(alloc_size);
 
@@ -22,7 +17,7 @@ public:
 		uint8_t plid_idx = device.GetPlacementIdentifierOrDefault(ctx.filepath);
 		xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device.device);
 
-		device.PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, 0, false);
+		device.PrepareIOCmdContext(&xnvme_ctx, ctx, plid_idx, 0, false);
 
 		int err = xnvme_nvm_read(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
 
@@ -37,12 +32,7 @@ public:
 		device.FreeDeviceBuffer(dev_buffer);
 	}
 
-	void Write(void *buffer, const NvmeCmdContext &context) override {
-		const NvmeCmdContext &ctx = context;
-
-		D_ASSERT(ctx.nr_lbas > 0);
-		D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
-
+	void Write(void *buffer, const NvmeCmdContext &ctx) override {
 		// FIX: Allocate based on LBA size
 		idx_t alloc_size = ctx.nr_lbas * device.geometry.lba_size;
 		nvme_buf_ptr dev_buffer = device.AllocateDeviceBuffer(alloc_size);
@@ -72,7 +62,7 @@ public:
 		uint8_t plid_idx = device.GetPlacementIdentifierOrDefault(ctx.filepath);
 		xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device.device);
 
-		device.PrepareIOCmdContext(&xnvme_ctx, context, plid_idx, DATA_PLACEMENT_MODE, true);
+		device.PrepareIOCmdContext(&xnvme_ctx, ctx, plid_idx, DATA_PLACEMENT_MODE, true);
 
 		int err = xnvme_nvm_write(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
 		if (err) {
