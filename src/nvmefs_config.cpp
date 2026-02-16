@@ -75,11 +75,12 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 	config.AddExtensionOption("nvme_device_path", "Path to NVMe device", {LogicalType::VARCHAR}, Value(device));
 	config.AddExtensionOption("backend", "xnvme backend used for IO", {LogicalType::VARCHAR}, Value(backend));
 
+	bool is_async = IsAsynchronousBackend(backend);
 	backend = SanatizeBackend(backend);
 
 	return NvmeConfig {.device_path = device,
 	                   .backend = backend,
-	                   .async = IsAsynchronousBackend(backend),
+	                   .async = is_async,
 	                   .max_temp_size = max_temp_size,
 	                   .max_wal_size = max_wal_size,
 	                   .max_threads = max_threads};
