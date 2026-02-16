@@ -26,8 +26,10 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	}
 
 	if (StringUtil::Contains(config.meta, "sync_writer")) {
+		duckdb::Printer::Print("[nvmefs] Using synchronous IO engine for writes");
 		io_engine = make_uniq<NvmeSyncIOEngine>(*this);
 	} else {
+		duckdb::Printer::Print("[nvmefs] Using asynchronous IO engine for writes");
 		io_engine = make_uniq<NvmeAsyncIOEngine>(*this);
 	}
 
