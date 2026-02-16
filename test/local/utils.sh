@@ -13,8 +13,9 @@ secret_cleanup() {
 
 disk_cleanup() {
     if [[ -f "$SCRIPT_DIR/device_dealloc.sh" && -f "$SCRIPT_DIR/create_device.sh" ]]; then
-        bash "$SCRIPT_DIR/device_dealloc.sh"
-        bash "$SCRIPT_DIR/create_device.sh"
+        echo "Cleaning up NVMe device $DEVICE with NSID $NSID..."
+        bash "$SCRIPT_DIR/device_dealloc.sh" $DEVICE $NSID
+        bash "$SCRIPT_DIR/create_device.sh" $DEVICE $NSID
     else
         echo "Warning: Cleanup scripts not found in $SCRIPT_DIR"
     fi
@@ -36,7 +37,7 @@ setup_environment() {
     echo "=== Setting up environment for target: $current_target ==="
 
     # Determine if SPDK is used
-    if [[ "$current_target" == "spdk_sync" || "$current_target" == "spdk_async" ]]; then
+    if [[ "$current_target" == "spdk" || "$current_target" == "spdk_async" ]]; then
         is_spdk=true
     fi
 
