@@ -4,6 +4,8 @@
 #include "duckdb/common/optional_idx.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "device.hpp"
+#include "nvme_io_engine.hpp"
+#include "nvmefs_config.hpp"
 #include <libxnvme.h>
 #include <mutex>
 #include <future>
@@ -22,8 +24,11 @@ struct NvmeCmdContext : public CmdContext {
 };
 
 class NvmeDevice : public Device {
+	friend class NvmeAsyncIOEngine;
+	friend class NvmeSyncIOEngine;
+
 public:
-	NvmeDevice(const string &device_path, const string &backend, const idx_t max_threads);
+	NvmeDevice(const NvmeConfig &config);
 	~NvmeDevice();
 
 	/// @brief Writes data from the input buffer to the device at the specified LBA position
@@ -33,7 +38,7 @@ public:
 	/// @param start_lab The LBA to start writing from
 	/// @param offset An offset into the LBA
 	/// @return The amount of LBAs written to the device
-	idx_t Write(void *buffer, const CmdContext &context) override;
+	void Write(void *buffer, const CmdContext &context) override;
 
 	/// @brief Reads data from the device at the specified LBA position into the output buffer
 	/// @param buffer The output buffer that will contain data read from the device
@@ -42,7 +47,7 @@ public:
 	/// @param start_lab The LBA to start reading from
 	/// @param offset An offset into the LBA
 	/// @return The amount of LBAs read from the device
-	idx_t Read(void *buffer, const CmdContext &context) override;
+	void Read(void *buffer, const CmdContext &context) override;
 
 	/// @brief Fetches the geometry of the device
 	/// @return The device geometry
@@ -96,6 +101,8 @@ private:
 	const idx_t max_threads;
 	atomic<idx_t> thread_id_counter;
 	static thread_local optional_idx index;
+
+	unique_ptr<NvmeIOEngine> io_engine;
 };
 
 } // namespace duckdb

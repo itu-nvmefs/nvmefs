@@ -4,8 +4,8 @@
 
 namespace duckdb {
 
-const unordered_set<string> NVMEFS_BACKENDS = {
-    "io_uring", "io_uring_cmd", "spdk", "nvme", "libaio", "io_ring", "iocp", "iocp_th", "posix", "emu", "thrpool", "nil"};
+const unordered_set<string> NVMEFS_BACKENDS = {"io_uring", "io_uring_cmd", "spdk",  "nvme", "libaio",  "io_ring",
+                                               "iocp",     "iocp_th",      "posix", "emu",  "thrpool", "nil"};
 
 static unique_ptr<BaseSecret> CreateNvmefsSecretFromConfig(ClientContext &context, CreateSecretInput &input) {
 	auto scope = input.scope;
@@ -58,6 +58,8 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 
 	string device;
 	string backend;
+	string meta;
+
 	// TODO: ensure that we always have value here. It is possible to not have value
 	idx_t max_temp_size = 200ULL << 30; // 200 GiB
 	if (config.options.maximum_swap_space != DConstants::INVALID_INDEX) {
@@ -69,19 +71,24 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 
 	secret_reader.TryGetSecretKeyOrSetting<string>("nvme_device_path", "nvme_device_path", device);
 	secret_reader.TryGetSecretKeyOrSetting<string>("backend", "backend", backend);
+	secret_reader.TryGetSecretKeyOrSetting<string>("meta", "meta", meta);
 
 	config.AddExtensionOption("nvme_device_path", "Path to NVMe device", {LogicalType::VARCHAR}, Value(device));
 	config.AddExtensionOption("backend", "xnvme backend used for IO", {LogicalType::VARCHAR}, Value(backend));
+	config.AddExtensionOption("meta", "Whether to print additional metadata about the device", {LogicalType::VARCHAR},
+	                          Value(meta));
 
 	backend = SanatizeBackend(backend);
 
-	return NvmeConfig {.device_path = device,
-	                   .backend = backend,
-	                   .max_temp_size = max_temp_size,
-	                   .max_wal_size = max_wal_size,
-	                   .max_threads = max_threads};
+	return NvmeConfig {
+	    .device_path = device,
+	    .backend = backend,
+	    .meta = meta,
+	    .max_temp_size = max_temp_size,
+	    .max_wal_size = max_wal_size,
+	    .max_threads = max_threads,
+	};
 }
-
 
 string NvmeConfigManager::SanatizeBackend(const string &backend) {
 	if (backend.empty() || (NVMEFS_BACKENDS.find(backend) == NVMEFS_BACKENDS.end())) {

@@ -63,17 +63,20 @@ idx_t NvmeFileHandle::GetFilePointer() {
 
 ////////////////////////////////////////
 
-//std::recursive_mutex NvmeFileSystem::temp_lock;
+// std::recursive_mutex NvmeFileSystem::temp_lock;
 
 NvmeFileSystem::NvmeFileSystem(NvmeConfig config)
     : allocator(Allocator::DefaultAllocator()),
-      device(make_uniq<NvmeDevice>(config.device_path, config.backend, config.max_threads)),
-      max_temp_size(config.max_temp_size), max_wal_size(config.max_wal_size), db_location(0), wal_location(0) {
+      // Pass the config object directly to the device constructor
+      device(make_uniq<NvmeDevice>(config)), max_temp_size(config.max_temp_size), max_wal_size(config.max_wal_size),
+      db_location(0), wal_location(0) {
 }
 
 NvmeFileSystem::NvmeFileSystem(NvmeConfig config, unique_ptr<Device> device)
-    : allocator(Allocator::DefaultAllocator()), device(std::move(device)), max_temp_size(config.max_temp_size),
-      max_wal_size(config.max_wal_size), db_location(0), wal_location(0) {
+    : allocator(Allocator::DefaultAllocator()),
+      // Use the device provided (useful for testing or custom backends)
+      device(std::move(device)), max_temp_size(config.max_temp_size), max_wal_size(config.max_wal_size), db_location(0),
+      wal_location(0) {
 }
 
 NvmeFileSystem::~NvmeFileSystem() {
@@ -140,7 +143,7 @@ void NvmeFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, i
 		throw IOException("Read out of range");
 	}
 
-	idx_t written_lbas = device->Write(buffer, *cmd_ctx);
+	device->Write(buffer, *cmd_ctx);
 	UpdateMetadata(*cmd_ctx);
 }
 

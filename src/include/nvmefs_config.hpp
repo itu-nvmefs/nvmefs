@@ -17,6 +17,7 @@ public:
 struct NvmeConfig {
 	string device_path;
 	string backend;
+	string meta;
 	uint64_t max_temp_size;
 	uint64_t max_wal_size;
 	uint64_t max_threads;

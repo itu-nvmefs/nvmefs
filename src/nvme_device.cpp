@@ -1,12 +1,15 @@
 #include "nvme_device.hpp"
+#include "nvme_io_engine.hpp"
+#include "io_engines/nvme_async_io_engine.hpp"
+#include "io_engines/nvme_sync_io_engine.hpp"
 
 namespace duckdb {
 thread_local optional_idx NvmeDevice::index = optional_idx();
-NvmeDevice::NvmeDevice(const string &device_path, const string &backend, const idx_t max_threads)
-	: dev_path(device_path), backend(backend), max_threads(max_threads) {
+NvmeDevice::NvmeDevice(const NvmeConfig &config)
+    : dev_path(config.device_path), backend(config.backend), max_threads(config.max_threads) {
 	xnvme_opts opts = xnvme_opts_default();
 	PrepareOpts(opts);
-	device = xnvme_dev_open(device_path.c_str(), &opts);
+	device = xnvme_dev_open(dev_path.c_str(), &opts);
 	if (!device) {
 		xnvme_cli_perr("xnvme_dev_open()", errno);
 		throw InternalException("Unable to open device");
@@ -22,6 +25,13 @@ NvmeDevice::NvmeDevice(const string &device_path, const string &backend, const i
 		InitializePlacementHandles();
 	}
 
+	if (StringUtil::Contains(config.meta, "sync_writer")) {
+		duckdb::Printer::Print("[nvmefs] Using synchronous IO engine for writes");
+		io_engine = make_uniq<NvmeSyncIOEngine>(*this);
+	} else {
+		duckdb::Printer::Print("[nvmefs] Using asynchronous IO engine for writes");
+		io_engine = make_uniq<NvmeAsyncIOEngine>(*this);
+	}
 
 	GetThreadIndex();
 	allocated_placement_identifiers["nvmefs:///tmp"] = 1;
@@ -29,9 +39,9 @@ NvmeDevice::NvmeDevice(const string &device_path, const string &backend, const i
 }
 
 NvmeDevice::~NvmeDevice() {
-		for (const auto &queue : queues) {
-			xnvme_queue_term(queue);
-		}
+	for (const auto &queue : queues) {
+		xnvme_queue_term(queue);
+	}
 	xnvme_dev_close(device);
 }
 
@@ -82,7 +92,6 @@ void NvmeDevice::PrepareOpts(xnvme_opts &opts) {
 	if (StringUtil::Equals(this->backend.data(), "io_uring_cmd")) {
 		opts.sync = "nvme";
 	}
-	
 }
 
 void NvmeDevice::CommandCallback(struct xnvme_cmd_ctx *ctx, void *cb_args) {
@@ -100,145 +109,25 @@ void NvmeDevice::CommandCallback(struct xnvme_cmd_ctx *ctx, void *cb_args) {
 	notifier->set_value();
 }
 
-idx_t NvmeDevice::Read(void *buffer, const CmdContext &context) {
+void NvmeDevice::Read(void *buffer, const CmdContext &context) {
 	const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
 	D_ASSERT(ctx.nr_lbas > 0);
 	// We only support offset reads within a single block
 	D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
 
-	// Allocate based on LBA size (aligned), not user request size
-	// Using nr_bytes causes buffer overflow if it is smaller than the full LBA size
-	idx_t alloc_size = ctx.nr_lbas * geometry.lba_size;
-	nvme_buf_ptr dev_buffer = AllocateDeviceBuffer(alloc_size);
-
-	uint32_t nsid = xnvme_dev_get_nsid(device);
-	uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
-
-	idx_t thread_index = GetThreadIndex();
-	xnvme_queue *queue = queues[thread_index];
-
-	if (!queue) {
-		int err = xnvme_queue_init(device, XNVME_QUEUE_DEPTH, 0, &queues[thread_index]);
-		if (err) {
-			FreeDeviceBuffer(dev_buffer);
-			xnvme_cli_perr("Unable to create an queue for asynchronous IO", err);
-			throw IOException("Unable to create queue");
-		}
-		queue = queues[thread_index];
-	}
-
-	xnvme_cmd_ctx *xnvme_ctx = xnvme_queue_get_cmd_ctx(queue);
-	PrepareIOCmdContext(xnvme_ctx, context, plid_idx, 0, false);
-
-	std::promise<void> cb_notify;
-	std::future<void> fut = cb_notify.get_future();
-
-	xnvme_cmd_ctx_set_cb(xnvme_ctx, CommandCallback, &cb_notify);
-
-	std::future_status status;
-	std::chrono::milliseconds interval = std::chrono::milliseconds(0);
-
-	int err = xnvme_nvm_read(xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
-	if (err) {
-		FreeDeviceBuffer(dev_buffer);
-		xnvme_cli_perr("Could not submit command to queue with xnvme_nvme_read(): ", err);
-		throw IOException("Encountered error when reading from NVMe device");
-	}
-
-	do {
-		xnvme_queue_poke(queue, 0);
-		status = fut.wait_for(interval);
-	} while (status != std::future_status::ready);
-
-	memcpy(buffer, (char *)dev_buffer + ctx.offset, ctx.nr_bytes);
-
-	FreeDeviceBuffer(dev_buffer);
-
-	// auto end_time = std::chrono::high_resolution_clock::now();
-	// auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-	// // Print the duration
-	// printf("ReadAsync took %d milliseconds.\n", duration.count());
-
-	return ctx.nr_lbas;
+	io_engine->Read(buffer, ctx);
 }
 
-idx_t NvmeDevice::Write(void *buffer, const CmdContext &context) {
+void NvmeDevice::Write(void *buffer, const CmdContext &context) {
 	const NvmeCmdContext &ctx = static_cast<const NvmeCmdContext &>(context);
 	D_ASSERT(ctx.nr_lbas > 0);
 	D_ASSERT((ctx.offset == 0 && ctx.nr_lbas > 1) || (ctx.offset >= 0 && ctx.nr_lbas == 1));
 
-	//  Allocate based on LBA size
-	idx_t alloc_size = ctx.nr_lbas * geometry.lba_size;
-	nvme_buf_ptr dev_buffer = AllocateDeviceBuffer(alloc_size);
-
-	// Read-Modify-Write logic for partial blocks (Copied from synchronous Write)
-	if (ctx.offset > 0 || ctx.nr_bytes < alloc_size) {
-		uint32_t nsid = xnvme_dev_get_nsid(device);
-		xnvme_cmd_ctx read_ctx = xnvme_cmd_ctx_from_dev(device);
-		read_ctx.cmd.common.cdw12 = ctx.nr_lbas - 1;
-
-		// We do a synchronous read here to ensure the buffer is populated before we modify it
-		int err = xnvme_nvm_read(&read_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
-		if (err) {
-			FreeDeviceBuffer(dev_buffer);
-			throw IOException("Read-modify-write failed in WriteAsync");
-		}
-	}
-
-	// Copy user data to the aligned buffer at the correct offset
-	memcpy((char *)dev_buffer + ctx.offset, buffer, ctx.nr_bytes);
-
-	uint32_t nsid = xnvme_dev_get_nsid(device);
-	uint8_t plid_idx = GetPlacementIdentifierOrDefault(ctx.filepath);
-
-	idx_t thread_index = GetThreadIndex();
-	xnvme_queue *queue = queues[thread_index];
-
-	if (!queue) {
-		int err = xnvme_queue_init(device, XNVME_QUEUE_DEPTH, 0, &queues[thread_index]);
-		if (err) {
-			FreeDeviceBuffer(dev_buffer);
-			xnvme_cli_perr("Unable to create an queue for asynchronous IO", err);
-			throw IOException("Unable to create queue");
-		}
-		queue = queues[thread_index];
-	}
-
-	xnvme_cmd_ctx *xnvme_ctx = xnvme_queue_get_cmd_ctx(queue);
-	PrepareIOCmdContext(xnvme_ctx, context, plid_idx, DATA_PLACEMENT_MODE, true);
-
-	std::promise<void> cb_notify;
-	std::future<void> fut = cb_notify.get_future();
-
-	xnvme_cmd_ctx_set_cb(xnvme_ctx, CommandCallback, &cb_notify);
-
-	std::future_status status;
-	std::chrono::milliseconds interval = std::chrono::milliseconds(0);
-
-	int err = xnvme_nvm_write(xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
-	if (err) {
-		FreeDeviceBuffer(dev_buffer);
-		xnvme_cli_perr("Could not submit command to queue with xnvme_nvme_write(): ", err);
-		throw IOException("Encountered error when writing to NVMe device");
-	}
-
-	do {
-		xnvme_queue_poke(queue, 0);
-		status = fut.wait_for(interval);
-	} while (status != std::future_status::ready);
-
-	FreeDeviceBuffer(dev_buffer);
-
-	// auto end_time = std::chrono::high_resolution_clock::now();
-	// auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-	// // Print the duration
-	// printf("WriteAsync took %d milliseconds.\n", duration.count());
-
-	return ctx.nr_lbas;
+	io_engine->Write(buffer, ctx);
 }
 
 void NvmeDevice::PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_ctx, idx_t plid_idx, idx_t dtype,
-									 bool write) {
+                                     bool write) {
 	const NvmeCmdContext &nvme_cmd_ctx = static_cast<const NvmeCmdContext &>(cmd_ctx);
 
 	// Specified by the command set specification:
