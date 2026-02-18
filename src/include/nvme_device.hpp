@@ -66,6 +66,10 @@ public:
 		return memory_manager.get();
 	}
 
+	bool IsMemoryManagerEnabled() const {
+		return use_memory_manager;
+	}
+
 private:
 	/// @brief Determines which placment handler should be used for the given path
 	/// @param path The path of the file that will be opened
@@ -111,6 +115,8 @@ private:
 
 	unique_ptr<NvmeIOEngine> io_engine;
 	unique_ptr<NvmeMemoryManager> memory_manager;
+
+	bool use_memory_manager;
 };
 
 } // namespace duckdb

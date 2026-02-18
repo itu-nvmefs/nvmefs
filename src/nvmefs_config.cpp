@@ -27,6 +27,7 @@ static unique_ptr<BaseSecret> CreateNvmefsSecretFromConfig(ClientContext &contex
 void SetNvmefsSecretParameters(CreateSecretFunction &function) {
 	function.named_parameters["nvme_device_path"] = LogicalType::VARCHAR;
 	function.named_parameters["backend"] = LogicalType::VARCHAR;
+	function.named_parameters["meta"] = LogicalType::VARCHAR;
 }
 
 void RegisterCreateNvmefsSecretFunciton(DatabaseInstance &instance) {

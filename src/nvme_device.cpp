@@ -29,22 +29,23 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 		InitializePlacementHandles();
 	}
 
-	if (StringUtil::Contains(config.meta, "sync_writer")) {
+	if (StringUtil::Contains(config.meta, "use_sync_writer")) {
 		duckdb::Printer::Print("[nvmefs] Using synchronous IO engine for writes");
 		io_engine = make_uniq<NvmeSyncIOEngine>(*this);
-	}
-	else if (StringUtil::Contains(config.meta, "mm_sync_writer")) {
+	} else if (StringUtil::Contains(config.meta, "use_mm_sync_writer")) {
 		duckdb::Printer::Print("[nvmefs] Using MM synchronous IO engine for writes");
 		io_engine = make_uniq<NvmeMMSyncIOEngine>(*this);
-	}
-	else if (StringUtil::Contains(config.meta, "mm_async_writer")) {
+	} else if (StringUtil::Contains(config.meta, "use_mm_async_writer")) {
 		duckdb::Printer::Print("[nvmefs] Using MM asynchronous IO engine for writes");
 		io_engine = make_uniq<NvmeMMAsyncIOEngine>(*this);
-	}
-	else {
+	} else {
 		duckdb::Printer::Print("[nvmefs] Using asynchronous IO engine for writes");
 		io_engine = make_uniq<NvmeAsyncIOEngine>(*this);
 	}
+
+	use_memory_manager = StringUtil::Contains(config.meta, "use_custom_memory_manager");
+	duckdb::Printer::Print("[nvmefs] Using custom memory manager: " +
+	                       (use_memory_manager ? string("enabled") : string("disabled")));
 
 	GetThreadIndex();
 	allocated_placement_identifiers["nvmefs:///tmp"] = 1;
@@ -79,11 +80,11 @@ uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
 }
 
 nvme_buf_ptr NvmeDevice::AllocateDeviceBuffer(idx_t nr_bytes) {
-	return memory_manager->Allocate(nr_bytes);
+	return use_memory_manager ? memory_manager->Allocate(nr_bytes) : xnvme_buf_alloc(device, nr_bytes);
 }
 
 void NvmeDevice::FreeDeviceBuffer(nvme_buf_ptr buffer, idx_t size) {
-	memory_manager->Free(buffer, size);
+	use_memory_manager ? memory_manager->Free(buffer, size) : xnvme_buf_free(device, buffer);
 }
 
 DeviceGeometry NvmeDevice::LoadDeviceGeometry() {

@@ -12,7 +12,7 @@ namespace duckdb {
 static constexpr idx_t SPDK_HUGEPAGE_SIZE = 2 * 1024 * 1024;
 static constexpr idx_t DUCKDB_BLOCK_SIZE = 256 * 1024;
 static constexpr idx_t CHUNKS_PER_PAGE = SPDK_HUGEPAGE_SIZE / DUCKDB_BLOCK_SIZE;
-static constexpr idx_t THREAD_CACHE_SIZE = 16;
+static constexpr idx_t THREAD_CACHE_SIZE = 16 * 4 * 2;
 
 class NvmeMemoryManager {
 public:

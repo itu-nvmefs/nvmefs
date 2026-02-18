@@ -11,6 +11,11 @@ namespace duckdb {
 void NvmeAllocator::OverwriteGlobal(DatabaseInstance &instance, NvmeFileSystem *nvme_fs) {
 	auto &device = static_cast<NvmeDevice &>(nvme_fs->GetDevice());
 
+	if (!device.IsMemoryManagerEnabled()) {
+		duckdb::Printer::Print("[nvmefs] Custom memory manager is not enabled. Using standard allocator.");
+		return;
+	}
+
 	NvmeMemoryManager *manager = device.GetMemoryManager();
 	DBConfig &config = DBConfig::GetConfig(instance);
 
