@@ -2,6 +2,8 @@
 #include "nvme_io_engine.hpp"
 #include "io_engines/nvme_async_io_engine.hpp"
 #include "io_engines/nvme_sync_io_engine.hpp"
+#include "io_engines/nvme_mm_async_io_engine.hpp"
+#include "io_engines/nvme_mm_sync_io_engine.hpp"
 
 namespace duckdb {
 thread_local optional_idx NvmeDevice::index = optional_idx();
@@ -30,7 +32,16 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	if (StringUtil::Contains(config.meta, "sync_writer")) {
 		duckdb::Printer::Print("[nvmefs] Using synchronous IO engine for writes");
 		io_engine = make_uniq<NvmeSyncIOEngine>(*this);
-	} else {
+	}
+	else if (StringUtil::Contains(config.meta, "mm_sync_writer")) {
+		duckdb::Printer::Print("[nvmefs] Using MM synchronous IO engine for writes");
+		io_engine = make_uniq<NvmeMMSyncIOEngine>(*this);
+	}
+	else if (StringUtil::Contains(config.meta, "mm_async_writer")) {
+		duckdb::Printer::Print("[nvmefs] Using MM asynchronous IO engine for writes");
+		io_engine = make_uniq<NvmeMMAsyncIOEngine>(*this);
+	}
+	else {
 		duckdb::Printer::Print("[nvmefs] Using asynchronous IO engine for writes");
 		io_engine = make_uniq<NvmeAsyncIOEngine>(*this);
 	}

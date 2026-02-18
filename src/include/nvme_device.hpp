@@ -27,6 +27,8 @@ struct NvmeCmdContext : public CmdContext {
 class NvmeDevice : public Device {
 	friend class NvmeAsyncIOEngine;
 	friend class NvmeSyncIOEngine;
+	friend class NvmeMMSyncIOEngine;
+	friend class NvmeMMAsyncIOEngine;
 
 public:
 	NvmeDevice(const NvmeConfig &config);
