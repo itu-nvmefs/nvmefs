@@ -2,6 +2,8 @@
 #include "nvme_io_engine.hpp"
 #include "io_engines/nvme_async_io_engine.hpp"
 #include "io_engines/nvme_sync_io_engine.hpp"
+#include "io_engines/nvme_mm_async_io_engine.hpp"
+#include "io_engines/nvme_mm_sync_io_engine.hpp"
 
 namespace duckdb {
 thread_local optional_idx NvmeDevice::index = optional_idx();
@@ -19,19 +21,31 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	// Set the callback function for completed commands. No callback arguments, hence last argument equal to NULL
 	queues = vector<xnvme_queue *>(max_threads, nullptr);
 
+	memory_manager = make_uniq<NvmeMemoryManager>(device);
+
 	fdp = CheckFDP();
 
 	if (fdp) {
 		InitializePlacementHandles();
 	}
 
-	if (StringUtil::Contains(config.meta, "sync_writer")) {
+	if (StringUtil::Contains(config.meta, "use_sync_writer")) {
 		duckdb::Printer::Print("[nvmefs] Using synchronous IO engine for writes");
 		io_engine = make_uniq<NvmeSyncIOEngine>(*this);
+	} else if (StringUtil::Contains(config.meta, "use_mm_sync_writer")) {
+		duckdb::Printer::Print("[nvmefs] Using MM synchronous IO engine for writes");
+		io_engine = make_uniq<NvmeMMSyncIOEngine>(*this);
+	} else if (StringUtil::Contains(config.meta, "use_mm_async_writer")) {
+		duckdb::Printer::Print("[nvmefs] Using MM asynchronous IO engine for writes");
+		io_engine = make_uniq<NvmeMMAsyncIOEngine>(*this);
 	} else {
 		duckdb::Printer::Print("[nvmefs] Using asynchronous IO engine for writes");
 		io_engine = make_uniq<NvmeAsyncIOEngine>(*this);
 	}
+
+	use_memory_manager = StringUtil::Contains(config.meta, "use_custom_memory_manager");
+	duckdb::Printer::Print("[nvmefs] Using custom memory manager: " +
+	                       (use_memory_manager ? string("enabled") : string("disabled")));
 
 	GetThreadIndex();
 	allocated_placement_identifiers["nvmefs:///tmp"] = 1;
@@ -39,9 +53,14 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 }
 
 NvmeDevice::~NvmeDevice() {
+	if (memory_manager) {
+		memory_manager.reset();
+	}
+
 	for (const auto &queue : queues) {
 		xnvme_queue_term(queue);
 	}
+
 	xnvme_dev_close(device);
 }
 
@@ -61,11 +80,11 @@ uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
 }
 
 nvme_buf_ptr NvmeDevice::AllocateDeviceBuffer(idx_t nr_bytes) {
-	return xnvme_buf_alloc(device, nr_bytes);
+	return use_memory_manager ? memory_manager->Allocate(nr_bytes) : xnvme_buf_alloc(device, nr_bytes);
 }
 
-void NvmeDevice::FreeDeviceBuffer(nvme_buf_ptr buffer) {
-	xnvme_buf_free(device, buffer);
+void NvmeDevice::FreeDeviceBuffer(nvme_buf_ptr buffer, idx_t size) {
+	use_memory_manager ? memory_manager->Free(buffer, size) : xnvme_buf_free(device, buffer);
 }
 
 DeviceGeometry NvmeDevice::LoadDeviceGeometry() {

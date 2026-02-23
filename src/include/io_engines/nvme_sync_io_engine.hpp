@@ -22,14 +22,14 @@ public:
 		int err = xnvme_nvm_read(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
 
 		if (err) {
-			device.FreeDeviceBuffer(dev_buffer);
+			device.FreeDeviceBuffer(dev_buffer, alloc_size);
 			xnvme_cli_perr("Could not write to device with xnvme_nvme_write(): ", err);
 			throw IOException("Encountered error when writing to NVMe device");
 		}
 
 		memcpy(buffer, (char *)dev_buffer + ctx.offset, ctx.nr_bytes);
 
-		device.FreeDeviceBuffer(dev_buffer);
+		device.FreeDeviceBuffer(dev_buffer, alloc_size);
 	}
 
 	void Write(void *buffer, const NvmeCmdContext &ctx) override {
@@ -50,7 +50,7 @@ public:
 
 			int err = xnvme_nvm_read(&read_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
 			if (err) {
-				device.FreeDeviceBuffer(dev_buffer);
+				device.FreeDeviceBuffer(dev_buffer, alloc_size);
 				throw IOException("Read-modify-write failed");
 			}
 		}
@@ -66,12 +66,12 @@ public:
 
 		int err = xnvme_nvm_write(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
 		if (err) {
-			device.FreeDeviceBuffer(dev_buffer);
+			device.FreeDeviceBuffer(dev_buffer, alloc_size);
 			xnvme_cli_perr("Could not write to device with xnvme_nvme_write(): ", err);
 			throw IOException("Encountered error when writing to NVMe device");
 		}
 
-		device.FreeDeviceBuffer(dev_buffer);
+		device.FreeDeviceBuffer(dev_buffer, alloc_size);
 	}
 };
 } // namespace duckdb

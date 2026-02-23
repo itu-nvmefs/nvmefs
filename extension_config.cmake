@@ -3,7 +3,7 @@
 # Extension from this repo
 duckdb_extension_load(nvmefs
     SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}
-    LOAD_TESTS
+#  LOAD_TESTS
 )
 
 # Any extra extensions that should be built

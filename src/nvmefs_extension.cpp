@@ -1,6 +1,7 @@
 #define DUCKDB_EXTENSION_MAIN
 
 #include "nvmefs_extension.hpp"
+#include "nvmefs_allocator.hpp"
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
@@ -24,7 +25,7 @@ static void ConfigPrint(ClientContext &context, TableFunctionInput &data_p, Data
 		return;
 	}
 
-	vector<string> settings {"nvme_device_path", "temp_directory", "backend", "worker_threads"};
+	vector<string> settings {"nvme_device_path", "temp_directory", "backend", "worker_threads", "meta"};
 	idx_t chunk_count = 0;
 
 	for (string setting : settings) {
@@ -63,14 +64,20 @@ static void AddConfig(DatabaseInstance &instance) {
 
 	// Add extension options
 	if (!nvmeConfig.device_path.empty()) {
-
 		auto &fs = instance.GetFileSystem();
-		fs.RegisterSubSystem(make_uniq<NvmeFileSystem>(nvmeConfig));
+		auto nvmefs_ptr = make_uniq<NvmeFileSystem>(nvmeConfig);
+
+		auto *nvmefs_raw_ptr = nvmefs_ptr.get();
+
+		fs.RegisterSubSystem(std::move(nvmefs_ptr));
+
+		NvmeAllocator::OverwriteGlobal(instance, nvmefs_raw_ptr);
 	} else {
 		duckdb::Printer::Print(
-		    "Nvmefs extension loaded but no nvme_device_path specified. NvmeFileSystem will not be registered.");
-		duckdb::Printer::Print("To use the NvmeFileSystem, set the 'nvme_device_path' configuration option to the path "
-		                       "of the NVMe device and restart the database.");
+		    "[nvmefs] Extension loaded but no nvme_device_path specified. NvmeFileSystem will not be registered.");
+		duckdb::Printer::Print(
+		    "[nvmefs] To use the NvmeFileSystem, set the 'nvme_device_path' configuration option to the path "
+		    "of the NVMe device and restart the database.");
 	}
 }
 

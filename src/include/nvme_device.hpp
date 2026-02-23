@@ -10,6 +10,7 @@
 #include <mutex>
 #include <future>
 #include <chrono>
+#include "nvme_memory_manager.hpp"
 
 namespace duckdb {
 
@@ -26,6 +27,8 @@ struct NvmeCmdContext : public CmdContext {
 class NvmeDevice : public Device {
 	friend class NvmeAsyncIOEngine;
 	friend class NvmeSyncIOEngine;
+	friend class NvmeMMSyncIOEngine;
+	friend class NvmeMMAsyncIOEngine;
 
 public:
 	NvmeDevice(const NvmeConfig &config);
@@ -59,6 +62,14 @@ public:
 		return "NvmeDevice";
 	}
 
+	NvmeMemoryManager *GetMemoryManager() {
+		return memory_manager.get();
+	}
+
+	bool IsMemoryManagerEnabled() const {
+		return use_memory_manager;
+	}
+
 private:
 	/// @brief Determines which placment handler should be used for the given path
 	/// @param path The path of the file that will be opened
@@ -72,7 +83,7 @@ private:
 
 	/// @brief Frees the given device buffer
 	/// @param buffer The device buffer to free
-	void FreeDeviceBuffer(nvme_buf_ptr buffer);
+	void FreeDeviceBuffer(nvme_buf_ptr buffer, idx_t size);
 
 	/// @brief Loads the geometry of the decvice
 	/// @return The device geometry
@@ -103,6 +114,9 @@ private:
 	static thread_local optional_idx index;
 
 	unique_ptr<NvmeIOEngine> io_engine;
+	unique_ptr<NvmeMemoryManager> memory_manager;
+
+	bool use_memory_manager;
 };
 
 } // namespace duckdb
