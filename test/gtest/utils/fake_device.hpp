@@ -8,8 +8,8 @@ public:
 	FakeDevice(idx_t lba_count, idx_t lba_size = DEFAULT_BLOCK_SIZE);
 	~FakeDevice();
 
-	idx_t Write(void *buffer, const CmdContext &context) override;
-	idx_t Read(void *buffer, const CmdContext &context) override;
+	void Write(void *buffer, const CmdContext &context) override;
+	void Read(void *buffer, const CmdContext &context) override;
 
 	DeviceGeometry GetDeviceGeometry() override;
 
