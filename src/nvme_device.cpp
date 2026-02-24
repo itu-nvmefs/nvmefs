@@ -53,7 +53,8 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	}
 
 	GetThreadIndex();
-	allocated_placement_identifiers["nvmefs:///tmp"] = 1;
+
+	allocated_placement_identifiers = config.fdp_mapping;
 	geometry = LoadDeviceGeometry();
 }
 
@@ -70,14 +71,29 @@ DeviceGeometry NvmeDevice::GetDeviceGeometry() {
 }
 
 uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
-	uint8_t placement_identifier = 0;
-	for (const auto &kv : allocated_placement_identifiers) {
-		if (StringUtil::StartsWith(path, kv.first)) {
-			placement_identifier = kv.second;
-		}
-	}
+	// Isolate the filename 
+    string filename = path;
+    auto last_slash = path.find_last_of('/');
+    if (last_slash != string::npos) {
+        filename = path.substr(last_slash + 1);
+    }
 
-	return placement_identifier;
+    // Exact matches for filenames
+    for (const auto &kv : allocated_placement_identifiers) {
+        if (!StringUtil::StartsWith(kv.first, ".") && filename == kv.first) {
+            return kv.second;
+        }
+    }
+
+    // Target matches for file extension
+    for (const auto &kv : allocated_placement_identifiers) {
+        if (StringUtil::StartsWith(kv.first, ".") && StringUtil::Contains(path, kv.first)) {
+            return kv.second;
+        }
+    }
+
+    // Default fallback RUH
+    return 0;
 }
 
 nvme_buf_ptr NvmeDevice::AllocateDeviceBuffer(idx_t nr_bytes) {

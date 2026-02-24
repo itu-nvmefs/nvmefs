@@ -58,6 +58,8 @@ static void AddConfig(DatabaseInstance &instance) {
 
 	DBConfig &config = DBConfig::GetConfig(instance);
 
+	config.AddExtensionOption
+
 	NvmeConfigManager::RegisterConfigFunctions(instance);
 	NvmeConfig nvmeConfig = NvmeConfigManager::LoadConfig(instance);
 

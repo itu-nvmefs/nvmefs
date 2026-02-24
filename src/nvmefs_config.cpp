@@ -57,6 +57,7 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 	string device;
 	string backend;
 	string meta;
+	string fdp_mapping_str = ".db:0,.wal:1,.tmp:2";
 
 	// TODO: ensure that we always have value here. It is possible to not have value
 	idx_t max_temp_size = 200ULL << 30; // 200 GiB
@@ -75,6 +76,7 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 	config.AddExtensionOption("backend", "xnvme backend used for IO", {LogicalType::VARCHAR}, Value(backend));
 	config.AddExtensionOption("meta", "Whether to print additional metadata about the device", {LogicalType::VARCHAR},
 	                          Value(meta));
+	config.AddExtensionOption("fdp_mapping", "FDP mapping", {LogicalType::VARCHAR}, Value(fdp_mapping_str));
 
 	backend = SanatizeBackend(backend);
 
@@ -82,14 +84,23 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 		TempDirectorySetting::SetGlobal(&instance, config, Value("nvmefs:///tmp"));
 	}
 
-	return NvmeConfig {
-	    .device_path = device,
-	    .backend = backend,
-	    .meta = meta,
-	    .max_temp_size = max_temp_size,
-	    .max_wal_size = max_wal_size,
-	    .max_threads = max_threads,
-	};
+	// Parse FDP mapping
+	std::unordered_map<string, uint8_t> fdp_mapping;
+	auto pairs = StringUtil::Split(fdp_mapping_str, ",");
+	for (const auto &pair : pairs) {
+		auto kv = StringUtil::Split(pair, ":");
+		if (kv.size() == 2) {
+			fdp_mapping[kv[0]] = (uint8_t)std::stoul(kv[1]);
+		}
+	}
+
+	return NvmeConfig {.device_path = device,
+	                   .backend = backend,
+	                   .meta = meta,
+	                   .max_temp_size = max_temp_size,
+	                   .max_wal_size = max_wal_size,
+	                   .max_threads = max_threads,
+	                   .fdp_mapping = fdp_mapping};
 }
 
 string NvmeConfigManager::SanatizeBackend(const string &backend) {
