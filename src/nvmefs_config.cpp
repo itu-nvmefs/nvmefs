@@ -80,10 +80,22 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 	config.AddExtensionOption("fdp_mapping", "FDP mapping", {LogicalType::VARCHAR}, Value(fdp_mapping_str));
 
 	// Override with enviroment variables if they exist
-	if (const char* env_dev = std::getenv("NVMEFS_DEVICE_PATH")) device = env_dev;
-    if (const char* env_backend = std::getenv("NVMEFS_BACKEND")) backend = env_backend;
-    if (const char* env_meta = std::getenv("NVMEFS_META")) meta = env_meta;
-    if (const char* env_fdp = std::getenv("NVMEFS_FDP_MAPPING")) fdp_mapping_str = env_fdp;
+	if (const char* env_dev = std::getenv("NVMEFS_DEVICE_PATH")) {
+		duckdb::Printer::Print(StringUtil::Format("NVMEFS_DEVICE_PATH: %s", env_dev));
+		device = env_dev;
+	}
+    if (const char* env_backend = std::getenv("NVMEFS_BACKEND")) {
+		duckdb::Printer::Print(StringUtil::Format("NVMEFS_BACKEND: %s", env_backend));
+		backend = env_backend;
+	} 
+    if (const char* env_meta = std::getenv("NVMEFS_META")) {
+		duckdb::Printer::Print(StringUtil::Format("NVMEFS_META: %s", env_meta));
+		meta = env_meta;
+	} 
+    if (const char* env_fdp = std::getenv("NVMEFS_FDP_MAPPING")) {
+		duckdb::Printer::Print(StringUtil::Format("NVMEFS_FDP_MAPPING: %s", env_fdp));
+		fdp_mapping_str = env_fdp;
+	} 
 
 	backend = SanatizeBackend(backend);
 

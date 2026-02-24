@@ -55,6 +55,7 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	GetThreadIndex();
 
 	allocated_placement_identifiers = std::map<string, uint8_t>(config.fdp_mapping.begin(), config.fdp_mapping.end());
+
 	geometry = LoadDeviceGeometry();
 }
 
