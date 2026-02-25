@@ -76,7 +76,8 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 
 	config.AddExtensionOption("nvme_device_path", "Path to NVMe device", {LogicalType::VARCHAR}, Value(device));
 	config.AddExtensionOption("backend", "xnvme backend used for IO", {LogicalType::VARCHAR}, Value(backend));
-	config.AddExtensionOption("meta", "Whether to print additional metadata about the device", {LogicalType::VARCHAR}, Value(meta));
+	config.AddExtensionOption("meta", "Whether to print additional metadata about the device", {LogicalType::VARCHAR},
+	                          Value(meta));
 	config.AddExtensionOption("fdp_mapping", "FDP mapping", {LogicalType::VARCHAR}, Value(fdp_mapping_str));
 
 	// Override with enviroment variables if they exist

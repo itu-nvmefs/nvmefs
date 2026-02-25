@@ -55,7 +55,6 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	GetThreadIndex();
 
 	allocated_placement_identifiers = std::map<string, uint8_t>(config.fdp_mapping.begin(), config.fdp_mapping.end());
-
 	geometry = LoadDeviceGeometry();
 }
 
@@ -78,9 +77,8 @@ uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
             return entry.second;
         }
     }
-
-    // Default fallback RUH
-    return 0;
+	// Default fallback RUH
+	return 0;
 }
 
 nvme_buf_ptr NvmeDevice::AllocateDeviceBuffer(idx_t nr_bytes) {
