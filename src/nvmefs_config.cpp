@@ -28,6 +28,7 @@ void SetNvmefsSecretParameters(CreateSecretFunction &function) {
 	function.named_parameters["nvme_device_path"] = LogicalType::VARCHAR;
 	function.named_parameters["backend"] = LogicalType::VARCHAR;
 	function.named_parameters["meta"] = LogicalType::VARCHAR;
+	function.named_parameters["fdp_mapping"] = LogicalType::VARCHAR;
 }
 
 void RegisterCreateNvmefsSecretFunciton(DatabaseInstance &instance) {
@@ -57,7 +58,7 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 	string device;
 	string backend;
 	string meta;
-	string fdp_mapping_str = ".db:0,.wal:1,.tmp:2";
+	string fdp_mapping_str;
 
 	// TODO: ensure that we always have value here. It is possible to not have value
 	idx_t max_temp_size = 200ULL << 30; // 200 GiB
@@ -71,6 +72,7 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 	secret_reader.TryGetSecretKeyOrSetting<string>("nvme_device_path", "nvme_device_path", device);
 	secret_reader.TryGetSecretKeyOrSetting<string>("backend", "backend", backend);
 	secret_reader.TryGetSecretKeyOrSetting<string>("meta", "meta", meta);
+	secret_reader.TryGetSecretKeyOrSetting<string>("fdp_mapping", "fdp_mapping", fdp_mapping_str);
 
 	config.AddExtensionOption("nvme_device_path", "Path to NVMe device", {LogicalType::VARCHAR}, Value(device));
 	config.AddExtensionOption("backend", "xnvme backend used for IO", {LogicalType::VARCHAR}, Value(backend));
