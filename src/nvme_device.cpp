@@ -21,12 +21,15 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	// Set the callback function for completed commands. No callback arguments, hence last argument equal to NULL
 	queues = vector<xnvme_queue *>(max_threads, nullptr);
 
-	memory_manager = make_uniq<NvmeMemoryManager>(device);
-
 	fdp = CheckFDP();
 
 	if (fdp) {
+		duckdb::Printer::Print("[nvmefs] FDP: Enabled. Initializing placement handles...");
 		InitializePlacementHandles();
+		duckdb::Printer::Print("[nvmefs] FDP: Placement handles initialized successfully");
+	} else {
+		duckdb::Printer::Print("[nvmefs] FDP: Not supported on this device, writes will be treated as regular writes "
+		                       "without special placement");
 	}
 
 	if (StringUtil::Contains(config.meta, "use_sync_writer")) {
@@ -46,6 +49,10 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	use_memory_manager = StringUtil::Contains(config.meta, "use_custom_memory_manager");
 	duckdb::Printer::Print("[nvmefs] Using custom memory manager: " +
 	                       (use_memory_manager ? string("enabled") : string("disabled")));
+
+	if (use_memory_manager) {
+		memory_manager = make_uniq<NvmeMemoryManager>(device);
+	}
 
 	GetThreadIndex();
 	allocated_placement_identifiers["nvmefs:///tmp"] = 1;
