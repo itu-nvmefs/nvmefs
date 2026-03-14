@@ -6,7 +6,8 @@
 #include "io_engines/nvme_mm_sync_io_engine.hpp"
 
 namespace duckdb {
-thread_local optional_idx NvmeDevice::index = optional_idx();
+thread_local QueueDeleter NvmeDevice::local_queue;
+
 NvmeDevice::NvmeDevice(const NvmeConfig &config)
     : dev_path(config.device_path), backend(config.backend), max_threads(config.max_threads) {
 	xnvme_opts opts = xnvme_opts_default();
@@ -19,9 +20,6 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 
 	// Initialize the xnvme queue for asynchronous IO
 	// Set the callback function for completed commands. No callback arguments, hence last argument equal to NULL
-	queues = vector<xnvme_queue *>(max_threads, nullptr);
-
-	memory_manager = make_uniq<NvmeMemoryManager>(device);
 
 	fdp = CheckFDP();
 
@@ -47,7 +45,10 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	duckdb::Printer::Print("[nvmefs] Using custom memory manager: " +
 	                       (use_memory_manager ? string("enabled") : string("disabled")));
 
-	GetThreadIndex();
+	if (use_memory_manager) {
+		memory_manager = make_uniq<NvmeMemoryManager>(device);
+	}
+
 	allocated_placement_identifiers["nvmefs:///tmp"] = 1;
 	geometry = LoadDeviceGeometry();
 }
@@ -55,10 +56,6 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 NvmeDevice::~NvmeDevice() {
 	if (memory_manager) {
 		memory_manager.reset();
-	}
-
-	for (const auto &queue : queues) {
-		xnvme_queue_term(queue);
 	}
 
 	xnvme_dev_close(device);
@@ -197,11 +194,22 @@ void NvmeDevice::InitializePlacementHandles() {
 	xnvme_buf_free(device, ruhs);
 }
 
-idx_t NvmeDevice::GetThreadIndex() {
-	if (!index.IsValid()) {
-		index = thread_id_counter++ % max_threads;
+QueueDeleter::~QueueDeleter() {
+	if (q) {
+		xnvme_queue_term(q);
+		q = nullptr;
 	}
+}
 
-	return index.GetIndex();
+xnvme_queue *NvmeDevice::GetQueue() {
+	if (!local_queue.q) [[unlikely]] {
+		int err = xnvme_queue_init(device, XNVME_QUEUE_DEPTH, 0, &local_queue.q);
+		if (err) {
+			throw IOException("Queue init failed");
+		}
+
+		xnvme_queue_set_cb(local_queue.q, CommandCallback, nullptr);
+	}
+	return local_queue.q;
 }
 } // namespace duckdb

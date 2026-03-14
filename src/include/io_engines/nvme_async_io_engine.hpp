@@ -18,19 +18,7 @@ public:
 		uint32_t nsid = xnvme_dev_get_nsid(device.device);
 		uint8_t plid_idx = device.GetPlacementIdentifierOrDefault(ctx.filepath);
 
-		idx_t thread_index = device.GetThreadIndex();
-		xnvme_queue *queue = device.queues[thread_index];
-
-		if (!queue) {
-			int err = xnvme_queue_init(device.device, XNVME_QUEUE_DEPTH, 0, &device.queues[thread_index]);
-			if (err) {
-				device.FreeDeviceBuffer(dev_buffer, alloc_size);
-				xnvme_cli_perr("Unable to create an queue for asynchronous IO", err);
-				throw IOException("Unable to create queue");
-			}
-			queue = device.queues[thread_index];
-		}
-
+		xnvme_queue *queue = device.GetQueue();
 		xnvme_cmd_ctx *xnvme_ctx = xnvme_queue_get_cmd_ctx(queue);
 		device.PrepareIOCmdContext(xnvme_ctx, ctx, plid_idx, 0, false);
 
@@ -84,19 +72,7 @@ public:
 		uint32_t nsid = xnvme_dev_get_nsid(device.device);
 		uint8_t plid_idx = device.GetPlacementIdentifierOrDefault(ctx.filepath);
 
-		idx_t thread_index = device.GetThreadIndex();
-		xnvme_queue *queue = device.queues[thread_index];
-
-		if (!queue) {
-			int err = xnvme_queue_init(device.device, XNVME_QUEUE_DEPTH, 0, &device.queues[thread_index]);
-			if (err) {
-				device.FreeDeviceBuffer(dev_buffer, alloc_size);
-				xnvme_cli_perr("Unable to create an queue for asynchronous IO", err);
-				throw IOException("Unable to create queue");
-			}
-			queue = device.queues[thread_index];
-		}
-
+		xnvme_queue *queue = device.GetQueue();
 		xnvme_cmd_ctx *xnvme_ctx = xnvme_queue_get_cmd_ctx(queue);
 		device.PrepareIOCmdContext(xnvme_ctx, ctx, plid_idx, DATA_PLACEMENT_MODE, true);
 

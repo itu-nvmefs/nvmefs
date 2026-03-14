@@ -14,6 +14,11 @@
 
 namespace duckdb {
 
+struct QueueDeleter {
+	xnvme_queue *q = nullptr;
+	~QueueDeleter(); // We define this in the .cpp to avoid header bloat
+};
+
 typedef void *nvme_buf_ptr;
 static constexpr idx_t XNVME_QUEUE_DEPTH = 1 << 4;
 static constexpr std::chrono::milliseconds POKE_MAX_BACKOFF_TIME = std::chrono::milliseconds(200);
@@ -98,7 +103,9 @@ private:
 	void PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_ctx, idx_t plid_idx, idx_t dtype, bool write);
 	bool CheckFDP();
 	void InitializePlacementHandles();
-	idx_t GetThreadIndex();
+	void InitializeThreadQueue();
+
+	xnvme_queue *GetQueue();
 
 private:
 	map<string, uint8_t> allocated_placement_identifiers;
@@ -108,10 +115,9 @@ private:
 	DeviceGeometry geometry;
 	const string backend;
 	bool fdp;
-	vector<xnvme_queue *> queues;
 	const idx_t max_threads;
-	atomic<idx_t> thread_id_counter;
-	static thread_local optional_idx index;
+
+	static thread_local QueueDeleter local_queue;
 
 	unique_ptr<NvmeIOEngine> io_engine;
 	unique_ptr<NvmeMemoryManager> memory_manager;
