@@ -6,17 +6,16 @@
 #include "device.hpp"
 #include "nvme_io_engine.hpp"
 #include "nvmefs_config.hpp"
+#include "buffer_allocators/nvme_buffer_allocator.hpp"
 #include <libxnvme.h>
 #include <mutex>
 #include <future>
 #include <chrono>
-#include "nvme_memory_manager.hpp"
 
 namespace duckdb {
 
 typedef void *nvme_buf_ptr;
 static constexpr idx_t XNVME_QUEUE_DEPTH = 1 << 4;
-static constexpr std::chrono::milliseconds POKE_MAX_BACKOFF_TIME = std::chrono::milliseconds(200);
 static constexpr idx_t DATA_PLACEMENT_MODE = 2;
 
 struct NvmeDeviceGeometry : public DeviceGeometry {};
@@ -27,29 +26,17 @@ struct NvmeCmdContext : public CmdContext {
 class NvmeDevice : public Device {
 	friend class NvmeAsyncIOEngine;
 	friend class NvmeSyncIOEngine;
-	friend class NvmeMMSyncIOEngine;
-	friend class NvmeMMAsyncIOEngine;
+	friend class NvmeAsyncThreadPollingIOEngine;
+	friend class NvmeAsynPrefetchIOEngine;
 
 public:
 	NvmeDevice(const NvmeConfig &config);
 	~NvmeDevice();
 
 	/// @brief Writes data from the input buffer to the device at the specified LBA position
-	/// @param buffer The input buffer that contains data to be written
-	/// @param nr_bytes The amount of bytes to write
-	/// @param nr_lbas The amount of LBAs to write
-	/// @param start_lab The LBA to start writing from
-	/// @param offset An offset into the LBA
-	/// @return The amount of LBAs written to the device
 	void Write(void *buffer, const CmdContext &context) override;
 
 	/// @brief Reads data from the device at the specified LBA position into the output buffer
-	/// @param buffer The output buffer that will contain data read from the device
-	/// @param nr_bytes The amount of bytes to read
-	/// @param nr_lbas The amount of LBAs to read
-	/// @param start_lab The LBA to start reading from
-	/// @param offset An offset into the LBA
-	/// @return The amount of LBAs read from the device
 	void Read(void *buffer, const CmdContext &context) override;
 
 	/// @brief Fetches the geometry of the device
@@ -62,30 +49,23 @@ public:
 		return "NvmeDevice";
 	}
 
-	NvmeMemoryManager *GetMemoryManager() {
-		return memory_manager.get();
-	}
-
-	bool IsMemoryManagerEnabled() const {
-		return use_memory_manager;
-	}
-
 private:
-	/// @brief Determines which placment handler should be used for the given path
+	/// @brief Determines which placement handler should be used for the given path
 	/// @param path The path of the file that will be opened
 	/// @return A placement identifier
 	uint8_t GetPlacementIdentifierOrDefault(const string &path);
 
 	/// @brief Allocates a device specific buffer. Should be freed with FreeDeviceBuffer.
-	/// @param nr_bytes The number of bytes to allocate (The allocated buffer mighr be larger)
+	/// @param nr_bytes The number of bytes to allocate
 	/// @return Pointer to allocated device buffer
 	nvme_buf_ptr AllocateDeviceBuffer(idx_t nr_bytes);
 
 	/// @brief Frees the given device buffer
 	/// @param buffer The device buffer to free
+	/// @param size The size of the buffer
 	void FreeDeviceBuffer(nvme_buf_ptr buffer, idx_t size);
 
-	/// @brief Loads the geometry of the decvice
+	/// @brief Loads the geometry of the device
 	/// @return The device geometry
 	DeviceGeometry LoadDeviceGeometry();
 
@@ -114,9 +94,7 @@ private:
 	static thread_local optional_idx index;
 
 	unique_ptr<NvmeIOEngine> io_engine;
-	unique_ptr<NvmeMemoryManager> memory_manager;
-
-	bool use_memory_manager;
+	unique_ptr<NvmeBufferAllocator> buffer_allocator;
 };
 
 } // namespace duckdb

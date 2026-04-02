@@ -10,6 +10,6 @@ test/python/__pycache__/
 **/.venv
 **/*.pyc
 vcpkg_installed/**
-
+ignore
 output.log
 yolo.py

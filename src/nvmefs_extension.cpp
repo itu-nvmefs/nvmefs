@@ -1,7 +1,6 @@
 #define DUCKDB_EXTENSION_MAIN
 
 #include "nvmefs_extension.hpp"
-#include "nvmefs_allocator.hpp"
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
@@ -70,8 +69,6 @@ static void AddConfig(DatabaseInstance &instance) {
 		auto *nvmefs_raw_ptr = nvmefs_ptr.get();
 
 		fs.RegisterSubSystem(std::move(nvmefs_ptr));
-
-		NvmeAllocator::OverwriteGlobal(instance, nvmefs_raw_ptr);
 	} else {
 		duckdb::Printer::Print(
 		    "[nvmefs] Extension loaded but no nvme_device_path specified. NvmeFileSystem will not be registered.");

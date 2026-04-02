@@ -17,7 +17,6 @@ set(EXTENSION_SOURCES
   src/device.cpp
   src/nvme_device.cpp
   src/temporary_file_metadata_manager.cpp
-  src/nvmefs_allocator.cpp
 
   )
 
