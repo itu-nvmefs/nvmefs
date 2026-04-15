@@ -2,8 +2,9 @@
 #include "nvme_io_engine.hpp"
 #include "io_engines/nvme_async_io_engine.hpp"
 #include "io_engines/nvme_sync_io_engine.hpp"
-#include "io_engines/nvme_mm_async_io_engine.hpp"
-#include "io_engines/nvme_mm_sync_io_engine.hpp"
+#include "io_engines/nvme_async_prefetch_io_engine.hpp"
+#include "buffer_allocators/nvme_default_buffer_allocator.hpp"
+#include "buffer_allocators/nvme_cached_buffer_allocator.hpp"
 
 namespace duckdb {
 thread_local optional_idx NvmeDevice::index = optional_idx();
@@ -33,25 +34,22 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	}
 
 	if (StringUtil::Contains(config.meta, "use_sync_writer")) {
-		duckdb::Printer::Print("[nvmefs] Using synchronous IO engine for writes");
+		duckdb::Printer::Print("[nvmefs] Using synchronous IO engine");
 		io_engine = make_uniq<NvmeSyncIOEngine>(*this);
-	} else if (StringUtil::Contains(config.meta, "use_mm_sync_writer")) {
-		duckdb::Printer::Print("[nvmefs] Using MM synchronous IO engine for writes");
-		io_engine = make_uniq<NvmeMMSyncIOEngine>(*this);
-	} else if (StringUtil::Contains(config.meta, "use_mm_async_writer")) {
-		duckdb::Printer::Print("[nvmefs] Using MM asynchronous IO engine for writes");
-		io_engine = make_uniq<NvmeMMAsyncIOEngine>(*this);
+	} else if (StringUtil::Contains(config.meta, "use_async_prefetch")) {
+		duckdb::Printer::Print("[nvmefs] Using Async Prefetch IO engine");
+		io_engine = make_uniq<NvmeAsynPrefetchIOEngine>(*this);
 	} else {
-		duckdb::Printer::Print("[nvmefs] Using asynchronous IO engine for writes");
+		duckdb::Printer::Print("[nvmefs] Using asynchronous IO engine");
 		io_engine = make_uniq<NvmeAsyncIOEngine>(*this);
 	}
 
-	use_memory_manager = StringUtil::Contains(config.meta, "use_custom_memory_manager");
-	duckdb::Printer::Print("[nvmefs] Using custom memory manager: " +
-	                       (use_memory_manager ? string("enabled") : string("disabled")));
-
-	if (use_memory_manager) {
-		memory_manager = make_uniq<NvmeMemoryManager>(device);
+	if (StringUtil::Contains(config.meta, "use_cached_allocator")) {
+		duckdb::Printer::Print("[nvmefs] Using cached buffer allocator");
+		buffer_allocator = make_uniq<NvmeCachedBufferAllocator>(device);
+	} else {
+		duckdb::Printer::Print("[nvmefs] Using default buffer allocator");
+		buffer_allocator = make_uniq<NvmeDefaultBufferAllocator>(device);
 	}
 
 	GetThreadIndex();
@@ -60,10 +58,6 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 }
 
 NvmeDevice::~NvmeDevice() {
-	if (memory_manager) {
-		memory_manager.reset();
-	}
-
 	for (const auto &queue : queues) {
 		xnvme_queue_term(queue);
 	}
@@ -87,11 +81,11 @@ uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
 }
 
 nvme_buf_ptr NvmeDevice::AllocateDeviceBuffer(idx_t nr_bytes) {
-	return use_memory_manager ? memory_manager->Allocate(nr_bytes) : xnvme_buf_alloc(device, nr_bytes);
+	return buffer_allocator->Allocate(nr_bytes);
 }
 
 void NvmeDevice::FreeDeviceBuffer(nvme_buf_ptr buffer, idx_t size) {
-	use_memory_manager ? memory_manager->Free(buffer, size) : xnvme_buf_free(device, buffer);
+	buffer_allocator->Free(buffer, size);
 }
 
 DeviceGeometry NvmeDevice::LoadDeviceGeometry() {
