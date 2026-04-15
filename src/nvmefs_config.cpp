@@ -52,9 +52,6 @@ void CreateNvmefsSecretFunctions::Register(DatabaseInstance &instance) {
 NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 	DBConfig &config = DBConfig::GetConfig(instance);
 
-	// Change global settings
-	TempDirectorySetting::SetGlobal(&instance, config, Value("nvmefs:///tmp"));
-
 	KeyValueSecretReader secret_reader(instance, "nvmefs", "nvmefs://");
 
 	string device;
@@ -80,6 +77,10 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 	                          Value(meta));
 
 	backend = SanatizeBackend(backend);
+
+	if (!device.empty()) {
+		TempDirectorySetting::SetGlobal(&instance, config, Value("nvmefs:///tmp"));
+	}
 
 	return NvmeConfig {
 	    .device_path = device,
