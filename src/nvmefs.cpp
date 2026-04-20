@@ -1,5 +1,6 @@
 #include "nvmefs.hpp"
 #include "strategies/file_strategy_factory.hpp"
+#include <atomic>
 
 namespace duckdb {
 
@@ -26,6 +27,12 @@ void NvmeFileHandle::Sync() {
 
 void NvmeFileHandle::Close() {
 }
+
+std::atomic<uint64_t> nvmefs_current_wal_bytes {0};
+std::atomic<uint64_t> nvmefs_peak_wal_bytes {0};
+
+std::atomic<uint64_t> nvmefs_total_spill_bytes {0};
+std::atomic<uint64_t> nvmefs_total_wal_bytes {0};
 
 unique_ptr<CmdContext> NvmeFileHandle::PrepareCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset) {
 	unique_ptr<NvmeCmdContext> nvme_cmd_ctx = make_uniq<NvmeCmdContext>();
@@ -136,7 +143,7 @@ void NvmeFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, i
 
 	FileMetadataStrategy *strategy = fh.GetStrategy();
 
-	idx_t start_lba = strategy->GetLBA(fh.path, nr_bytes, location, nr_lbas, geo);
+	idx_t start_lba = strategy->GetLBA(fh.GetPath(), nr_bytes, location, nr_lbas, geo);
 	idx_t in_block_offset = location % geo.lba_size;
 	unique_ptr<CmdContext> cmd_ctx = fh.PrepareCommand(nr_bytes, start_lba, in_block_offset);
 
@@ -146,6 +153,23 @@ void NvmeFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, i
 
 	device->Write(buffer, *cmd_ctx);
 	strategy->UpdateMetadata(*cmd_ctx);
+
+	NvmeFileType file_type = NvmePathHandler::GetFileType(fh.GetPath());
+
+	if (file_type == NvmeFileType::TEMPORARY) {
+		nvmefs_total_spill_bytes += nr_bytes;
+	} else if (file_type == NvmeFileType::WAL) {
+		nvmefs_total_wal_bytes += nr_bytes;
+
+		// Get absolute truth from the strategy
+		uint64_t true_size = GetFileSize(handle);
+		nvmefs_current_wal_bytes.store(true_size);
+
+		// Update Peak
+		uint64_t peak = nvmefs_peak_wal_bytes.load();
+		while (true_size > peak && !nvmefs_peak_wal_bytes.compare_exchange_weak(peak, true_size)) {
+		}
+	}
 }
 
 int64_t NvmeFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes) {
@@ -179,7 +203,7 @@ int64_t NvmeFileSystem::GetFileSize(FileHandle &handle) {
 
 	FileMetadataStrategy *strategy = fh.GetStrategy();
 
-	idx_t nr_lbas = strategy->GetFileSizeLBA(fh.path);
+	idx_t nr_lbas = strategy->GetFileSizeLBA(fh.GetPath());
 	return nr_lbas * geo.lba_size;
 }
 
@@ -201,6 +225,12 @@ void NvmeFileSystem::Truncate(FileHandle &handle, int64_t new_size) {
 
 	FileMetadataStrategy *strategy = nvme_handle.GetStrategy();
 	strategy->Truncate(nvme_handle.path, new_size);
+
+	NvmeFileType file_type = NvmePathHandler::GetFileType(nvme_handle.GetPath());
+
+	if (file_type == NvmeFileType::WAL) {
+		nvmefs_current_wal_bytes.store(new_size);
+	}
 }
 
 bool NvmeFileSystem::DirectoryExists(const string &directory, optional_ptr<FileOpener> opener) {

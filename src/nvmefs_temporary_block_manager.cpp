@@ -1,7 +1,12 @@
 #include "nvmefs_temporary_block_manager.hpp"
 #include <optional>
+#include <atomic>
 
 namespace duckdb {
+
+std::atomic<uint64_t> nvmefs_active_temp_bytes {0};
+std::atomic<uint64_t> nvmefs_peak_temp_bytes {0};
+
 TemporaryBlock::TemporaryBlock(idx_t start_lba, idx_t lba_amount)
     : start_lba(start_lba), lba_amount(lba_amount), is_free(false) {
 
@@ -91,6 +96,13 @@ TemporaryBlock *NvmeTemporaryBlockManager::AllocateBlock(idx_t lba_amount) {
 	// Return the block
 	block->is_free = false; // Mark the block as used
 
+	uint64_t added_bytes = lba_amount * 4096; // Assuming 4K LBA
+	uint64_t current_bytes = nvmefs_active_temp_bytes.fetch_add(added_bytes) + added_bytes;
+
+	uint64_t peak = nvmefs_peak_temp_bytes.load();
+	while (current_bytes > peak && !nvmefs_peak_temp_bytes.compare_exchange_weak(peak, current_bytes)) {
+	}
+
 	// auto end_time = std::chrono::high_resolution_clock::now();
 	// auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	// // Print the duration
@@ -155,6 +167,7 @@ void NvmeTemporaryBlockManager::FreeBlock(TemporaryBlock *block) {
 
 	// Mark the block as free
 	block->is_free = true;
+	nvmefs_active_temp_bytes.fetch_sub(block->lba_amount * 4096); // Assuming 4K LBA
 
 	// Coalesce the free blocks
 	CoalesceFreeBlocks(block);
