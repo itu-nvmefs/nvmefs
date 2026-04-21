@@ -53,7 +53,8 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	}
 
 	GetThreadIndex();
-	allocated_placement_identifiers["nvmefs:///tmp"] = 1;
+
+	allocated_placement_identifiers = std::map<string, uint8_t>(config.fdp_mapping.begin(), config.fdp_mapping.end());
 	geometry = LoadDeviceGeometry();
 }
 
@@ -70,14 +71,15 @@ DeviceGeometry NvmeDevice::GetDeviceGeometry() {
 }
 
 uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
-	uint8_t placement_identifier = 0;
-	for (const auto &kv : allocated_placement_identifiers) {
-		if (StringUtil::StartsWith(path, kv.first)) {
-			placement_identifier = kv.second;
-		}
-	}
+    for (const auto &entry : allocated_placement_identifiers) {
+        // Check if the file path ends with the extension defined in the key
+        if (StringUtil::EndsWith(path, entry.first)) {
+            return entry.second;
+        }
+    }
 
-	return placement_identifier;
+    // Default fallback RUH
+    return 0;
 }
 
 nvme_buf_ptr NvmeDevice::AllocateDeviceBuffer(idx_t nr_bytes) {
@@ -160,6 +162,9 @@ void NvmeDevice::PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_c
 	if (write && fdp) {
 		ctx->cmd.common.cdw12 |= dtype << 20;
 
+		if (plid_idx >= placement_handlers.size()) {
+			plid_idx = 0; // Fallback to default
+		}
 		uint16_t phid = placement_handlers[plid_idx];
 		ctx->cmd.common.cdw13 = phid << 16;
 	}

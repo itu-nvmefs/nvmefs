@@ -1,6 +1,11 @@
 #include "temporary_file_metadata_manager.hpp"
+#include <iostream>
+#include <atomic>
 
 namespace duckdb {
+
+std::atomic<int64_t> nvmefs_active_temp_files {0};
+std::atomic<int64_t> nvmefs_peak_temp_files {0};
 
 inline idx_t GetBufferSize(const string buffer_size_string) {
 
@@ -75,11 +80,18 @@ const TempFileMetadata *TemporaryFileMetadataManager::GetOrCreateFile(const stri
 	//    tfmeta->file_index);
 	auto [entry, is_new] = file_to_temp_meta.emplace(filename, std::move(tfmeta));
 
+	if (is_new) {
+		int64_t current = ++nvmefs_active_temp_files;
+		int64_t peak = nvmefs_peak_temp_files.load();
+		while (current > peak && !nvmefs_peak_temp_files.compare_exchange_weak(peak, current)) {
+		}
+	}
+
 	return file_to_temp_meta[filename].get();
 }
 
 void TemporaryFileMetadataManager::CreateFile(const string &filename) {
-
+	// duckdb::Printer::Print(StringUtil::Format("Creating file: %s", filename));
 	GetOrCreateFile(filename);
 }
 
@@ -173,6 +185,7 @@ void TemporaryFileMetadataManager::DeleteFile(const string &filename) {
 	}
 
 	file_to_temp_meta.erase(filename);
+	nvmefs_active_temp_files--;
 }
 
 bool TemporaryFileMetadataManager::FileExists(const string &filename) {
@@ -208,6 +221,7 @@ void TemporaryFileMetadataManager::Clear() {
 	}
 
 	file_to_temp_meta.clear();
+	nvmefs_active_temp_files.store(0);
 }
 
 idx_t TemporaryFileMetadataManager::GetSeekBound(const string &filename) {

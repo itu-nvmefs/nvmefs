@@ -78,11 +78,71 @@ static void AddConfig(DatabaseInstance &instance) {
 	}
 }
 
+// From nvmefs.cpp
+extern std::atomic<uint64_t> nvmefs_total_spill_bytes;
+extern std::atomic<uint64_t> nvmefs_total_wal_bytes;
+extern std::atomic<uint64_t> nvmefs_current_wal_bytes;
+extern std::atomic<uint64_t> nvmefs_peak_wal_bytes;
+
+// From temporary_file_metadata_manager.cpp
+extern std::atomic<int64_t> nvmefs_active_temp_files;
+extern std::atomic<int64_t> nvmefs_peak_temp_files;
+
+// From nvmefs_temporary_block_manager.cpp
+extern std::atomic<uint64_t> nvmefs_active_temp_bytes;
+extern std::atomic<uint64_t> nvmefs_peak_temp_bytes;
+
+static void MetricsPrint(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
+	auto &data = data_p.bind_data->CastNoConst<ConfigPrintFunctionData>(); // Reusing your struct
+	if (data.finished)
+		return;
+
+	idx_t row_idx = 0;
+
+	output.SetValue(0, row_idx, Value("total_spill_bytes"));
+	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_total_spill_bytes.load()));
+	row_idx++;
+
+	output.SetValue(0, row_idx, Value("total_wal_bytes"));
+	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_total_wal_bytes.load()));
+	row_idx++;
+
+	output.SetValue(0, row_idx, Value("current_wal_bytes"));
+	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_current_wal_bytes.load()));
+	row_idx++;
+
+	output.SetValue(0, row_idx, Value("peak_wal_bytes"));
+	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_peak_wal_bytes.load()));
+	row_idx++;
+
+	output.SetValue(0, row_idx, Value("active_temp_files"));
+	output.SetValue(1, row_idx, Value::BIGINT(nvmefs_active_temp_files.load()));
+	row_idx++;
+
+	output.SetValue(0, row_idx, Value("peak_temp_files"));
+	output.SetValue(1, row_idx, Value::BIGINT(nvmefs_peak_temp_files.load()));
+	row_idx++;
+
+	output.SetValue(0, row_idx, Value("active_temp_bytes"));
+	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_active_temp_bytes.load()));
+	row_idx++;
+
+	output.SetValue(0, row_idx, Value("peak_temp_bytes"));
+	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_peak_temp_bytes.load()));
+	row_idx++;
+
+	output.SetCardinality(row_idx);
+	data.finished = true;
+}
+
 static void LoadInternal(DatabaseInstance &instance) {
 	AddConfig(instance);
 
 	TableFunction config_print_function("print_config", {}, ConfigPrint, ConfigPrintBind);
 	ExtensionUtil::RegisterFunction(instance, config_print_function);
+
+	TableFunction metrics_print_function("print_nvmefs_metrics", {}, MetricsPrint, ConfigPrintBind);
+	ExtensionUtil::RegisterFunction(instance, metrics_print_function);
 }
 
 void NvmefsExtension::Load(DuckDB &db) {
