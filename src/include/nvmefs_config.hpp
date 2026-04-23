@@ -11,7 +11,7 @@ class CreateSecretFunction;
 
 struct CreateNvmefsSecretFunctions {
 public:
-	static void Register(DatabaseInstance &instance);
+	static void Register(ExtensionLoader &loader);
 };
 
 struct NvmeConfig {
@@ -26,8 +26,8 @@ struct NvmeConfig {
 
 class NvmeConfigManager {
 public:
-	static void RegisterConfigFunctions(DatabaseInstance &instance) {
-		CreateNvmefsSecretFunctions::Register(instance);
+	static void RegisterConfigFunctions(ExtensionLoader &loader) {
+		CreateNvmefsSecretFunctions::Register(loader);
 	};
 	static NvmeConfig LoadConfig(DatabaseInstance &instance);
 
