@@ -76,9 +76,14 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 
 	config.AddExtensionOption("nvme_device_path", "Path to NVMe device", {LogicalType::VARCHAR}, Value(device));
 	config.AddExtensionOption("backend", "xnvme backend used for IO", {LogicalType::VARCHAR}, Value(backend));
-	config.AddExtensionOption("meta", "Whether to print additional metadata about the device", {LogicalType::VARCHAR},
-	                          Value(meta));
+	config.AddExtensionOption("meta", "Whether to print additional metadata about the device", {LogicalType::VARCHAR}, Value(meta));
 	config.AddExtensionOption("fdp_mapping", "FDP mapping", {LogicalType::VARCHAR}, Value(fdp_mapping_str));
+
+	// Override with enviroment variables if they exist
+	if (const char* env_dev = std::getenv("NVMEFS_DEVICE_PATH")) device = env_dev;
+    if (const char* env_backend = std::getenv("NVMEFS_BACKEND")) backend = env_backend;
+    if (const char* env_meta = std::getenv("NVMEFS_META")) meta = env_meta;
+    if (const char* env_fdp = std::getenv("NVMEFS_FDP_MAPPING")) fdp_mapping_str = env_fdp;
 
 	backend = SanatizeBackend(backend);
 
