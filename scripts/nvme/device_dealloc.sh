@@ -1,11 +1,16 @@
 #!/bin/bash
 
-DEV=${1:-/dev/nvme0}
-NSID=${2:-1}
+nvme list
 
-echo "Using:"
+read -p "Enter the NVMe device number (e.g. 0): " DEV_NUM
+read -p "Enter the namespace ID (e.g. 1): " NSID
+
+DEV="/dev/nvme${DEV_NUM}"
+
+echo "Targeting:"
 echo "  Device: $DEV"
 echo "  Namespace ID: $NSID"
+echo "  Path: ${DEV}n${NSID}"
 
 if [ ! -e "$DEV" ]; then
     echo "Error: Device $DEV does not exist"
@@ -20,8 +25,7 @@ if [ -z "$NSZE" ]; then
     exit 1
 fi
 
-nvme list
-echo "About to deallocate $NSZE blocks on ${DEV}n${NSID}"
+echo "WARNING: About to deallocate $NSZE blocks on ${DEV}n${NSID}"
 read -r -p "Are you sure you want to continue? [y/N] " CONFIRM
 
 case "$CONFIRM" in
@@ -33,6 +37,7 @@ case "$CONFIRM" in
         ;;
 esac
 
-# Deallocate all blocks (trim/discard)
-nvme dsm ${DEV}n${NSID} --namespace-id=$NSID --ad -s 0 -b $NSZE
+# Deallocate all blocks (Data Set Management)
+nvme dsm "${DEV}n${NSID}" --namespace-id="$NSID" --ad -s 0 -b "$NSZE"
+
 echo "Deallocation complete"
