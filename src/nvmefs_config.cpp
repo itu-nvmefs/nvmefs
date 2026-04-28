@@ -1,6 +1,6 @@
 #include "nvmefs_config.hpp"
 
-#include "duckdb/main/extension_util.hpp"
+#include "duckdb/main/settings.hpp"
 
 namespace duckdb {
 
@@ -31,7 +31,7 @@ void SetNvmefsSecretParameters(CreateSecretFunction &function) {
 	function.named_parameters["fdp_mapping"] = LogicalType::VARCHAR;
 }
 
-void RegisterCreateNvmefsSecretFunciton(DatabaseInstance &instance) {
+void RegisterCreateNvmefsSecretFunciton(ExtensionLoader &loader) {
 	string type = "nvmefs";
 
 	SecretType secret_type;
@@ -39,15 +39,15 @@ void RegisterCreateNvmefsSecretFunciton(DatabaseInstance &instance) {
 	secret_type.deserializer = KeyValueSecret::Deserialize<KeyValueSecret>;
 	secret_type.default_provider = "config";
 
-	ExtensionUtil::RegisterSecretType(instance, secret_type);
+	loader.RegisterSecretType(secret_type);
 
 	CreateSecretFunction config_function = {type, "config", CreateNvmefsSecretFromConfig};
 	SetNvmefsSecretParameters(config_function);
-	ExtensionUtil::RegisterFunction(instance, config_function);
+	loader.RegisterFunction(config_function);
 }
 
-void CreateNvmefsSecretFunctions::Register(DatabaseInstance &instance) {
-	RegisterCreateNvmefsSecretFunciton(instance);
+void CreateNvmefsSecretFunctions::Register(ExtensionLoader &loader) {
+	RegisterCreateNvmefsSecretFunciton(loader);
 }
 
 NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {

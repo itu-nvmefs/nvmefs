@@ -5,7 +5,6 @@
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/string_util.hpp"
-#include "duckdb/main/extension_util.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/main/settings.hpp"
 
@@ -54,19 +53,16 @@ static unique_ptr<FunctionData> ConfigPrintBind(ClientContext &ctx, TableFunctio
 	return std::move(result);
 }
 
-static void AddConfig(DatabaseInstance &instance) {
+static void AddConfig(ExtensionLoader &loader) {
+	DatabaseInstance &instance = loader.GetDatabaseInstance();
 
-	DBConfig &config = DBConfig::GetConfig(instance);
-
-	NvmeConfigManager::RegisterConfigFunctions(instance);
+	NvmeConfigManager::RegisterConfigFunctions(loader);
 	NvmeConfig nvmeConfig = NvmeConfigManager::LoadConfig(instance);
 
 	// Add extension options
 	if (!nvmeConfig.device_path.empty()) {
 		auto &fs = instance.GetFileSystem();
 		auto nvmefs_ptr = make_uniq<NvmeFileSystem>(nvmeConfig);
-
-		auto *nvmefs_raw_ptr = nvmefs_ptr.get();
 
 		fs.RegisterSubSystem(std::move(nvmefs_ptr));
 	} else {
@@ -135,18 +131,18 @@ static void MetricsPrint(ClientContext &context, TableFunctionInput &data_p, Dat
 	data.finished = true;
 }
 
-static void LoadInternal(DatabaseInstance &instance) {
-	AddConfig(instance);
+static void LoadInternal(ExtensionLoader &loader) {
+	AddConfig(loader);
 
 	TableFunction config_print_function("print_config", {}, ConfigPrint, ConfigPrintBind);
-	ExtensionUtil::RegisterFunction(instance, config_print_function);
+	loader.RegisterFunction(config_print_function);
 
 	TableFunction metrics_print_function("print_nvmefs_metrics", {}, MetricsPrint, ConfigPrintBind);
-	ExtensionUtil::RegisterFunction(instance, metrics_print_function);
+	loader.RegisterFunction(metrics_print_function);
 }
 
-void NvmefsExtension::Load(DuckDB &db) {
-	LoadInternal(*db.instance);
+void NvmefsExtension::Load(ExtensionLoader &loader) {
+	LoadInternal(loader);
 }
 std::string NvmefsExtension::Name() {
 	return "nvmefs";
@@ -166,7 +162,7 @@ extern "C" {
 
 DUCKDB_EXTENSION_API void nvmefs_init(duckdb::DatabaseInstance &db) {
 	duckdb::DuckDB db_wrapper(db);
-	db_wrapper.LoadExtension<duckdb::NvmefsExtension>();
+	db_wrapper.LoadStaticExtension<duckdb::NvmefsExtension>();
 }
 
 DUCKDB_EXTENSION_API const char *nvmefs_version() {

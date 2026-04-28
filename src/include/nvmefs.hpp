@@ -31,13 +31,12 @@ struct TemporaryFileMetadata {
 };
 
 class NvmeFileHandle : public FileHandle {
-
 	friend class NvmeFileSystem;
 
 public:
 	NvmeFileHandle(FileSystem &file_system, string path, FileOpenFlags flags,
 	               unique_ptr<FileMetadataStrategy> strategy_p);
-	~NvmeFileHandle() = default;
+	~NvmeFileHandle() override = default;
 
 	void Read(void *buffer, idx_t nr_bytes, idx_t location);
 	void Write(void *buffer, idx_t nr_bytes, idx_t location);
@@ -69,16 +68,16 @@ private:
 
 class NvmeFileSystem : public FileSystem {
 public:
-	NvmeFileSystem(NvmeConfig config);
+	explicit NvmeFileSystem(NvmeConfig config);
 	NvmeFileSystem(NvmeConfig config, unique_ptr<Device> device);
-	~NvmeFileSystem();
+	~NvmeFileSystem() override;
 
 	unique_ptr<FileHandle> OpenFile(const string &path, FileOpenFlags flags,
 	                                optional_ptr<FileOpener> opener = nullptr) override;
 	void Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) override;
 	void Write(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) override;
-	int64_t Read(FileHandle &handle, void *buffer, int64_t nr_bytes);
-	int64_t Write(FileHandle &handle, void *buffer, int64_t nr_bytes);
+	int64_t Read(FileHandle &handle, void *buffer, int64_t nr_bytes) override;
+	int64_t Write(FileHandle &handle, void *buffer, int64_t nr_bytes) override;
 	bool CanHandleFile(const string &fpath) override;
 	bool FileExists(const string &filename, optional_ptr<FileOpener> opener = nullptr) override;
 	int64_t GetFileSize(FileHandle &handle) override;
@@ -88,18 +87,22 @@ public:
 	bool DirectoryExists(const string &directory, optional_ptr<FileOpener> opener = nullptr) override;
 	void RemoveDirectory(const string &directory, optional_ptr<FileOpener> opener = nullptr) override;
 	void CreateDirectory(const string &directory, optional_ptr<FileOpener> opener = nullptr) override;
+	void CreateDirectoriesRecursive(const string &path, optional_ptr<FileOpener> opener = nullptr) override;
 	void RemoveFile(const string &filename, optional_ptr<FileOpener> opener = nullptr) override;
+	bool TryRemoveFile(const string &filename, optional_ptr<FileOpener> opener = nullptr) override;
+	void RemoveFiles(const vector<string> &filenames, optional_ptr<FileOpener> opener = nullptr) override;
 	void Seek(FileHandle &handle, idx_t location) override;
-	void Reset(FileHandle &handle);
+	void Reset(FileHandle &handle) override;
 	idx_t SeekPosition(FileHandle &handle) override;
 	bool ListFiles(const string &directory, const std::function<void(const string &, bool)> &callback,
-	               FileOpener *opener = nullptr);
+	               FileOpener *opener = nullptr) override;
 	optional_idx GetAvailableDiskSpace(const string &path);
 	bool Trim(FileHandle &handle, idx_t offset_bytes, idx_t length_bytes) override;
+	string CanonicalizePath(const string &path, optional_ptr<FileOpener> opener = nullptr) override;
 
 	Device &GetDevice();
 
-	string GetName() const {
+	string GetName() const override {
 		return "NvmeFileSystem";
 	}
 

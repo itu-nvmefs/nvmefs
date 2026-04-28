@@ -257,11 +257,28 @@ void NvmeFileSystem::CreateDirectory(const string &directory, optional_ptr<FileO
 	}
 }
 
+void NvmeFileSystem::CreateDirectoriesRecursive(const string &path, optional_ptr<FileOpener> opener) {
+	if (!TryLoadMetadata()) {
+		throw IOException("No directories can exist when there is no metadata");
+	}
+}
+
 void NvmeFileSystem::RemoveFile(const string &filename, optional_ptr<FileOpener> opener) {
 	unique_ptr<FileMetadataStrategy> strategy(
 	    FileStrategyFactory::GetStrategy(filename, metadata.get(), db_location, wal_location, temp_meta_manager));
 
 	strategy->RemoveFile(filename);
+}
+
+bool NvmeFileSystem::TryRemoveFile(const string &filename, optional_ptr<FileOpener> opener) {
+	NvmeFileSystem::RemoveFile(filename, opener);
+	return true;
+}
+
+void NvmeFileSystem::RemoveFiles(const vector<string> &filenames, optional_ptr<FileOpener> opener) {
+	for (auto &filename : filenames) {
+		NvmeFileSystem::RemoveFile(filename, opener);
+	}
 }
 
 void NvmeFileSystem::Seek(FileHandle &handle, idx_t location) {
@@ -347,6 +364,10 @@ bool NvmeFileSystem::Trim(FileHandle &handle, idx_t offset_bytes, idx_t length_b
 
 	allocator.FreeData(data, length_bytes);
 	return true;
+}
+
+string NvmeFileSystem::CanonicalizePath(const string &path, optional_ptr<FileOpener> opener) {
+	return path;
 }
 
 bool NvmeFileSystem::TryLoadMetadata() {
