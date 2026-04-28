@@ -86,6 +86,10 @@ NvmeFileSystem::~NvmeFileSystem() {
 
 unique_ptr<FileHandle> NvmeFileSystem::OpenFile(const string &path, FileOpenFlags flags,
                                                 optional_ptr<FileOpener> opener) {
+	if (StringUtil::EndsWith(path, ".block")) {
+		idx_t dummy = 10;
+	}
+
 	if (path == NvmePathHandler::GLOBAL_METADATA_PATH) {
 		return make_uniq<NvmeFileHandle>(*this, path, flags, unique_ptr<FileMetadataStrategy>(nullptr));
 	}
@@ -189,6 +193,10 @@ bool NvmeFileSystem::CanHandleFile(const string &fpath) {
 bool NvmeFileSystem::FileExists(const string &filename, optional_ptr<FileOpener> opener) {
 	if (!TryLoadMetadata()) {
 		return false;
+	}
+
+	if (StringUtil::EndsWith(filename, ".block")) {
+		idx_t dummy = 10;
 	}
 
 	unique_ptr<FileMetadataStrategy> strategy(
