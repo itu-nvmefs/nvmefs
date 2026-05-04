@@ -60,6 +60,10 @@ idx_t NvmeFileHandle::GetFilePointer() {
 	return cursor_offset;
 }
 
+bool NvmeFileSystem::CanSeek() {
+	return true;
+}
+
 ////////////////////////////////////////
 
 NvmeFileSystem::NvmeFileSystem(NvmeConfig config)

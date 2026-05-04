@@ -7,6 +7,7 @@
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/main/settings.hpp"
+#include "duckdb/main/extension/extension_loader.hpp"
 
 namespace duckdb {
 struct ConfigPrintFunctionData : public TableFunctionData {
@@ -57,20 +58,15 @@ static void AddConfig(ExtensionLoader &loader) {
 	DatabaseInstance &instance = loader.GetDatabaseInstance();
 
 	NvmeConfigManager::RegisterConfigFunctions(loader);
+
 	NvmeConfig nvmeConfig = NvmeConfigManager::LoadConfig(instance);
 
-	// Add extension options
 	if (!nvmeConfig.device_path.empty()) {
 		auto &fs = instance.GetFileSystem();
 		auto nvmefs_ptr = make_uniq<NvmeFileSystem>(nvmeConfig);
-
 		fs.RegisterSubSystem(std::move(nvmefs_ptr));
 	} else {
-		duckdb::Printer::Print(
-		    "[nvmefs] Extension loaded but no nvme_device_path specified. NvmeFileSystem will not be registered.");
-		duckdb::Printer::Print(
-		    "[nvmefs] To use the NvmeFileSystem, set the 'nvme_device_path' configuration option to the path "
-		    "of the NVMe device and restart the database.");
+		fprintf(stderr, "[nvmefs] AddConfig: No device path found.\n");
 	}
 }
 
@@ -160,13 +156,8 @@ std::string NvmefsExtension::Version() const {
 
 extern "C" {
 
-DUCKDB_EXTENSION_API void nvmefs_init(duckdb::DatabaseInstance &db) {
-	duckdb::DuckDB db_wrapper(db);
-	db_wrapper.LoadStaticExtension<duckdb::NvmefsExtension>();
-}
-
-DUCKDB_EXTENSION_API const char *nvmefs_version() {
-	return duckdb::DuckDB::LibraryVersion();
+DUCKDB_CPP_EXTENSION_ENTRY(nvmefs, loader) {
+	duckdb::LoadInternal(loader);
 }
 }
 
