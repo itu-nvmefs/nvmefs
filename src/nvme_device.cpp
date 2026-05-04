@@ -22,15 +22,18 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	// Set the callback function for completed commands. No callback arguments, hence last argument equal to NULL
 	queues = vector<xnvme_queue *>(max_threads, nullptr);
 
-	fdp = CheckFDP();
+	use_fdp = !config.fdp_mapping.empty();
+	bool fdp_capable = CheckFDP();
+	if (use_fdp && !fdp_capable) {
+		throw IOException("[nvmefs] FDP Requested but device does not support it");
+	}
 
-	if (fdp) {
-		duckdb::Printer::Print("[nvmefs] FDP: Enabled. Initializing placement handles...");
+	if (use_fdp) {
+		Printer::Print("[nvmefs] FDP enabled. Initializing placement handles...");
 		InitializePlacementHandles();
-		duckdb::Printer::Print("[nvmefs] FDP: Placement handles initialized successfully");
+		Printer::Print("[nvmefs] FDP placement handles initialized");
 	} else {
-		duckdb::Printer::Print("[nvmefs] FDP: Not supported on this device, writes will be treated as regular writes "
-		                       "without special placement");
+		Printer::Print("[nvmefs] FDP disabled. Writes will use regular placement");
 	}
 
 	if (StringUtil::Contains(config.meta, "use_sync_writer")) {
@@ -71,15 +74,15 @@ DeviceGeometry NvmeDevice::GetDeviceGeometry() {
 }
 
 uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
-    for (const auto &entry : allocated_placement_identifiers) {
-        // Check if the file path ends with the extension defined in the key
-        if (StringUtil::EndsWith(path, entry.first)) {
-            return entry.second;
-        }
-    }
+	for (const auto &entry : allocated_placement_identifiers) {
+		// Check if the file path ends with the extension defined in the key
+		if (StringUtil::EndsWith(path, entry.first)) {
+			return entry.second;
+		}
+	}
 
-    // Default fallback RUH
-    return 0;
+	// Default fallback RUH
+	return 0;
 }
 
 nvme_buf_ptr NvmeDevice::AllocateDeviceBuffer(idx_t nr_bytes) {
@@ -159,7 +162,7 @@ void NvmeDevice::PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_c
 	uint16_t nr_lbas = nvme_cmd_ctx.nr_lbas - 1;
 
 	ctx->cmd.common.cdw12 = nr_lbas;
-	if (write && fdp) {
+	if (write && use_fdp) {
 		ctx->cmd.common.cdw12 |= dtype << 20;
 
 		if (plid_idx >= placement_handlers.size()) {
