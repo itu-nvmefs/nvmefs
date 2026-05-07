@@ -87,7 +87,7 @@ private:
 	const string dev_path;
 	DeviceGeometry geometry;
 	const string backend;
-	bool fdp;
+	bool use_fdp;
 	vector<xnvme_queue *> queues;
 	const idx_t max_threads;
 	atomic<idx_t> thread_id_counter;

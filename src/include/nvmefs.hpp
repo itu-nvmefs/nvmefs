@@ -99,7 +99,7 @@ public:
 	optional_idx GetAvailableDiskSpace(const string &path);
 	bool Trim(FileHandle &handle, idx_t offset_bytes, idx_t length_bytes) override;
 	string CanonicalizePath(const string &path, optional_ptr<FileOpener> opener = nullptr) override;
-
+	bool CanSeek() override;
 	Device &GetDevice();
 
 	string GetName() const override {
