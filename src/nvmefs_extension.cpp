@@ -59,6 +59,9 @@ extern const std::atomic<uint64_t> nvmefs_total_spill_bytes;
 extern const std::atomic<uint64_t> nvmefs_total_wal_bytes;
 extern const std::atomic<uint64_t> nvmefs_current_wal_bytes;
 extern const std::atomic<uint64_t> nvmefs_peak_wal_bytes;
+extern const std::atomic<uint64_t> nvmefs_total_db_bytes;
+extern const std::atomic<uint64_t> nvmefs_current_db_bytes;
+extern const std::atomic<uint64_t> nvmefs_peak_db_bytes;
 
 // From temporary_file_metadata_manager.cpp
 extern const std::atomic<int64_t> nvmefs_active_temp_files;
@@ -69,7 +72,7 @@ extern const std::atomic<uint64_t> nvmefs_active_temp_bytes;
 extern const std::atomic<uint64_t> nvmefs_peak_temp_bytes;
 
 static void MetricsPrint(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
-	auto &data = data_p.bind_data->CastNoConst<ConfigPrintFunctionData>(); // Reusing your struct
+	auto &data = data_p.bind_data->CastNoConst<ConfigPrintFunctionData>();
 	if (data.finished) {
 		return;
 	}
@@ -106,6 +109,18 @@ static void MetricsPrint(ClientContext &context, TableFunctionInput &data_p, Dat
 
 	output.SetValue(0, row_idx, Value("peak_temp_bytes"));
 	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_peak_temp_bytes.load()));
+	row_idx++;
+
+	output.SetValue(0, row_idx, Value("total_db_bytes"));
+	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_total_db_bytes.load()));
+	row_idx++;
+
+	output.SetValue(0, row_idx, Value("current_db_bytes"));
+	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_current_db_bytes.load()));
+	row_idx++;
+
+	output.SetValue(0, row_idx, Value("peak_db_bytes"));
+	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_peak_db_bytes.load()));
 	row_idx++;
 
 	output.SetCardinality(row_idx);

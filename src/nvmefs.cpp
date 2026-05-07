@@ -34,6 +34,10 @@ std::atomic<uint64_t> nvmefs_peak_wal_bytes {0};
 std::atomic<uint64_t> nvmefs_total_spill_bytes {0};
 std::atomic<uint64_t> nvmefs_total_wal_bytes {0};
 
+std::atomic<uint64_t> nvmefs_total_db_bytes {0};
+std::atomic<uint64_t> nvmefs_current_db_bytes {0};
+std::atomic<uint64_t> nvmefs_peak_db_bytes {0};
+
 unique_ptr<CmdContext> NvmeFileHandle::PrepareCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset) {
 	unique_ptr<NvmeCmdContext> nvme_cmd_ctx = make_uniq<NvmeCmdContext>();
 	nvme_cmd_ctx->nr_bytes = nr_bytes;
@@ -164,14 +168,20 @@ void NvmeFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, i
 		nvmefs_total_spill_bytes += nr_bytes;
 	} else if (file_type == NvmeFileType::WAL) {
 		nvmefs_total_wal_bytes += nr_bytes;
-
-		// Get absolute truth from the strategy
 		uint64_t true_size = GetFileSize(handle);
 		nvmefs_current_wal_bytes.store(true_size);
 
-		// Update Peak
 		uint64_t peak = nvmefs_peak_wal_bytes.load();
 		while (true_size > peak && !nvmefs_peak_wal_bytes.compare_exchange_weak(peak, true_size)) {
+		}
+	} else if (file_type == NvmeFileType::DATABASE) {
+		nvmefs_total_db_bytes += nr_bytes;
+
+		uint64_t true_size = GetFileSize(handle);
+		nvmefs_current_db_bytes.store(true_size);
+
+		uint64_t peak = nvmefs_peak_db_bytes.load();
+		while (true_size > peak && !nvmefs_peak_db_bytes.compare_exchange_weak(peak, true_size)) {
 		}
 	}
 }
@@ -234,6 +244,8 @@ void NvmeFileSystem::Truncate(FileHandle &handle, int64_t new_size) {
 
 	if (file_type == NvmeFileType::WAL) {
 		nvmefs_current_wal_bytes.store(new_size);
+	} else if (file_type == NvmeFileType::DATABASE) {
+		nvmefs_current_db_bytes.store(new_size);
 	}
 }
 
