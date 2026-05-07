@@ -1,6 +1,8 @@
 #include "nvmefs_config.hpp"
 
 #include "duckdb/main/settings.hpp"
+#include "duckdb/main/secret/secret.hpp"
+#include "duckdb/main/secret/secret_manager.hpp"
 
 namespace duckdb {
 
@@ -50,15 +52,24 @@ void CreateNvmefsSecretFunctions::Register(ExtensionLoader &loader) {
 	RegisterCreateNvmefsSecretFunciton(loader);
 }
 
-NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
-	DBConfig &config = DBConfig::GetConfig(instance);
+NvmeConfig NvmeConfigManager::LoadConfig(ClientContext &context, const string &secret_name) {
+	DBConfig &config = DBConfig::GetConfig(context);
 
-	KeyValueSecretReader secret_reader(instance, "nvmefs", "nvmefs://");
+	auto &secret_manager = SecretManager::Get(context);
+	auto transaction = CatalogTransaction::GetSystemCatalogTransaction(context);
+	auto secret_entry = secret_manager.GetSecretByName(transaction, secret_name);
 
-	string device;
-	string backend;
-	string meta;
-	string fdp_mapping_str;
+	if (!secret_entry) {
+		throw InvalidInputException("Secret with name '%s' was not found", secret_name);
+	}
+
+	// 4. Verify it's the right type for your extension
+	if (secret_entry->secret->GetType() != "nvmefs") {
+		throw InvalidInputException("Secret '%s' is of type %s, but 'nvmefs' is required", secret_name,
+		                            secret_entry->secret->GetType());
+	}
+
+	auto &kv_secret = dynamic_cast<const KeyValueSecret &>(*secret_entry->secret);
 
 	// TODO: ensure that we always have value here. It is possible to not have value
 	idx_t max_temp_size = 200ULL << 30; // 200 GiB
@@ -67,12 +78,27 @@ NvmeConfig NvmeConfigManager::LoadConfig(DatabaseInstance &instance) {
 	}
 	idx_t max_wal_size = 1ULL << 25; // 32 MiB
 
+	auto &instance = DatabaseInstance::GetDatabase(context);
 	idx_t max_threads = config.GetSystemMaxThreads(instance.GetFileSystem());
 
-	secret_reader.TryGetSecretKeyOrSetting<string>("nvme_device_path", "nvme_device_path", device);
-	secret_reader.TryGetSecretKeyOrSetting<string>("backend", "backend", backend);
-	secret_reader.TryGetSecretKeyOrSetting<string>("meta", "meta", meta);
-	secret_reader.TryGetSecretKeyOrSetting<string>("fdp_mapping", "fdp_mapping", fdp_mapping_str);
+	string device;
+	string backend;
+	string meta;
+	string fdp_mapping_str;
+
+	Value result;
+	if (kv_secret.TryGetValue("nvme_device_path", result)) {
+		device = result.GetValue<string>();
+	}
+	if (kv_secret.TryGetValue("backend", result)) {
+		backend = result.GetValue<string>();
+	}
+	if (kv_secret.TryGetValue("meta", result)) {
+		meta = result.GetValue<string>();
+	}
+	if (kv_secret.TryGetValue("fdp_mapping", result)) {
+		fdp_mapping_str = result.GetValue<string>();
+	}
 
 	config.AddExtensionOption("nvme_device_path", "Path to NVMe device", {LogicalType::VARCHAR}, Value(device));
 	config.AddExtensionOption("backend", "xnvme backend used for IO", {LogicalType::VARCHAR}, Value(backend));
