@@ -29,7 +29,7 @@ public:
 	static void RegisterConfigFunctions(ExtensionLoader &loader) {
 		CreateNvmefsSecretFunctions::Register(loader);
 	};
-	static NvmeConfig LoadConfig(DatabaseInstance &instance);
+	static NvmeConfig LoadConfig(ClientContext &context, const string &secret_name);
 
 private:
 	static bool IsAsynchronousBackend(const string &backend);
