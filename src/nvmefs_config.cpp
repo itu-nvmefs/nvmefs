@@ -72,6 +72,7 @@ NvmeConfig NvmeConfigManager::LoadConfig(ClientContext &context, const string &s
 	auto &kv_secret = dynamic_cast<const KeyValueSecret &>(*secret_entry->secret);
 
 	// TODO: ensure that we always have value here. It is possible to not have value
+
 	idx_t max_temp_size = 200ULL << 30; // 200 GiB
 	if (config.options.maximum_swap_space != DConstants::INVALID_INDEX) {
 		max_temp_size = static_cast<idx_t>(config.options.maximum_swap_space);

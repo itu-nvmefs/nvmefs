@@ -35,8 +35,7 @@ public:
 		idx_t expected_location = wal_location.load();
 		idx_t new_location = metadata->wal_start + nr_lbas;
 
-		while (!wal_location.compare_exchange_weak(expected_location, new_location))
-			;
+		while (!wal_location.compare_exchange_weak(expected_location, new_location));
 	}
 
 	void RemoveFile(const string &filename) override {
