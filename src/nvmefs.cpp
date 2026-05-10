@@ -44,16 +44,15 @@ unique_ptr<CmdContext> NvmeFileHandle::PrepareCommand(idx_t nr_bytes, idx_t star
 	nvme_cmd_ctx->filepath = path;
 	nvme_cmd_ctx->offset = offset;
 	nvme_cmd_ctx->start_lba = start_lba;
-	nvme_cmd_ctx->nr_lbas = CalculateRequiredLBACount(nr_bytes);
+	nvme_cmd_ctx->nr_lbas = CalculateRequiredLBACount(nr_bytes, offset);
 
 	return std::move(nvme_cmd_ctx);
 }
 
-idx_t NvmeFileHandle::CalculateRequiredLBACount(idx_t nr_bytes) {
-	NvmeFileSystem &nvmefs = file_system.Cast<NvmeFileSystem>();
-	DeviceGeometry geo = nvmefs.GetDevice().GetDeviceGeometry();
-	idx_t lba_size = geo.lba_size;
-	return (nr_bytes + lba_size - 1) / lba_size;
+idx_t NvmeFileHandle::CalculateRequiredLBACount(idx_t nr_bytes, idx_t offset) {
+    NvmeFileSystem &nvmefs = file_system.Cast<NvmeFileSystem>();
+    DeviceGeometry geo = nvmefs.GetDevice().GetDeviceGeometry();
+    return (offset + nr_bytes + geo.lba_size - 1) / geo.lba_size;
 }
 
 void NvmeFileHandle::SetFilePointer(idx_t location) {
@@ -125,14 +124,11 @@ void NvmeFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes, id
 	NvmeFileHandle &fh = handle.Cast<NvmeFileHandle>();
 	DeviceGeometry geo = device->GetDeviceGeometry();
 
-	idx_t cursor_offset = SeekPosition(handle);
-	location += cursor_offset;
-	idx_t nr_lbas = fh.CalculateRequiredLBACount(nr_bytes);
-
+	idx_t in_block_offset = location % geo.lba_size;
+	idx_t nr_lbas = fh.CalculateRequiredLBACount(nr_bytes, in_block_offset);
 	FileMetadataStrategy *strategy = fh.GetStrategy();
 
 	idx_t start_lba = strategy->GetLBA(handle.path, nr_bytes, location, nr_lbas, geo);
-	idx_t in_block_offset = location % geo.lba_size;
 	unique_ptr<CmdContext> cmd_ctx = fh.PrepareCommand(nr_bytes, start_lba, in_block_offset);
 
 	if (!strategy->IsLBAInRange(handle.path, start_lba, cmd_ctx->nr_lbas, geo)) {
@@ -146,15 +142,12 @@ void NvmeFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, i
 	NvmeFileHandle &fh = handle.Cast<NvmeFileHandle>();
 	DeviceGeometry geo = device->GetDeviceGeometry();
 
-	idx_t cursor_offset = SeekPosition(handle);
-	location += cursor_offset;
-	idx_t nr_lbas = fh.CalculateRequiredLBACount(nr_bytes);
-
+	idx_t in_block_offset = location % geo.lba_size;
+	idx_t nr_lbas = fh.CalculateRequiredLBACount(nr_bytes, in_block_offset);
 	FileMetadataStrategy *strategy = fh.GetStrategy();
 
 	idx_t start_lba = strategy->GetLBA(fh.GetPath(), nr_bytes, location, nr_lbas, geo);
-	idx_t in_block_offset = location % geo.lba_size;
-	unique_ptr<CmdContext> cmd_ctx = fh.PrepareCommand(nr_bytes, start_lba, in_block_offset);
+	auto cmd_ctx = fh.PrepareCommand(nr_bytes, start_lba, in_block_offset);
 
 	if (!strategy->IsLBAInRange(handle.path, start_lba, cmd_ctx->nr_lbas, geo)) {
 		throw IOException("Write out of range");
@@ -188,13 +181,23 @@ void NvmeFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, i
 }
 
 int64_t NvmeFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes) {
-	Read(handle, buffer, nr_bytes, 0);
-	return nr_bytes;
+	auto &fh = handle.Cast<NvmeFileHandle>();
+    idx_t location = fh.GetFilePointer();
+
+    Read(handle, buffer, nr_bytes, location);
+    fh.SetFilePointer(location + nr_bytes);
+
+    return nr_bytes;
 }
 
 int64_t NvmeFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes) {
-	Write(handle, buffer, nr_bytes, 0);
-	return nr_bytes;
+	auto &fh = handle.Cast<NvmeFileHandle>();
+    idx_t location = fh.GetFilePointer();
+
+    Write(handle, buffer, nr_bytes, location);
+    fh.SetFilePointer(location + nr_bytes);
+
+    return nr_bytes;
 }
 
 bool NvmeFileSystem::CanHandleFile(const string &fpath) {
