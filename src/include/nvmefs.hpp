@@ -56,7 +56,7 @@ private:
 	/// @brief Calculates the amount of LBAs required to store the given number of bytes
 	/// @param nr_bytes The number of bytes to store
 	/// @return The number of LBAs required to store the given number of bytes
-	idx_t CalculateRequiredLBACount(idx_t nr_bytes);
+	idx_t CalculateRequiredLBACount(idx_t nr_bytes, idx_t offset);
 
 	void SetFilePointer(idx_t location);
 	idx_t GetFilePointer();
