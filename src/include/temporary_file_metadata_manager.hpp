@@ -5,6 +5,7 @@
 #include <atomic>
 #include <boost/thread/shared_mutex.hpp> // sudo apt-get install libboost-all-dev
 #include <boost/thread/locks.hpp>
+#include <libxnvme.h>
 #include <shared_mutex>
 
 namespace duckdb {
@@ -34,9 +35,9 @@ public:
 
 	idx_t GetLBA(const string &filename, idx_t location, idx_t nr_lbas);
 
-	void TruncateFile(const string &filename, idx_t new_size);
+	void TruncateFile(const string &filename, idx_t new_size, xnvme_dev *dev);
 
-	void DeleteFile(const string &filename);
+	void DeleteFile(const string &filename, xnvme_dev *dev);
 
 	void MoveLBALocation(const string &filename, idx_t lba_location);
 
@@ -55,6 +56,8 @@ public:
 	const TempFileMetadata *GetOrCreateFile(const string &filename);
 
 private:
+	void DSMBlock(TemporaryBlock *block, xnvme_dev *dev);
+
 	idx_t lba_size;
 	idx_t lba_amount;
 	unique_ptr<NvmeTemporaryBlockManager> block_manager;

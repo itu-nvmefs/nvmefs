@@ -9,15 +9,14 @@ std::atomic<uint64_t> nvmefs_peak_temp_bytes {0};
 
 TemporaryBlock::TemporaryBlock(idx_t start_lba, idx_t lba_amount)
     : start_lba(start_lba), lba_amount(lba_amount), is_free(false) {
-
 	next_block = nullptr;
 	previous_block = nullptr;
 	next_free_block = nullptr;
 	previous_free_block = nullptr;
 }
 
-idx_t TemporaryBlock::GetSizeInBytes() {
-	return lba_amount * 4096; // TODO: Get the LBA size from the device
+idx_t TemporaryBlock::GetLBAAmount() {
+	return lba_amount;
 }
 
 idx_t TemporaryBlock::GetStartLBA() {
@@ -121,7 +120,6 @@ void NvmeTemporaryBlockManager::PrintBlocks(TemporaryBlock *block) {
 	printf("-------\n");
 }
 void NvmeTemporaryBlockManager::PrintBlocksBackwards(TemporaryBlock *block) {
-
 	printf("-------\n");
 	while (block != nullptr) {
 		printf("Block start lba %llu end lba %llu, is_free %d\n", block->GetStartLBA(), block->GetEndLBA(),
@@ -162,7 +160,6 @@ TemporaryBlock *NvmeTemporaryBlockManager::SplitBlock(TemporaryBlock *block, idx
 }
 
 void NvmeTemporaryBlockManager::FreeBlock(TemporaryBlock *block) {
-
 	// auto start_time = std::chrono::high_resolution_clock::now();
 
 	// Mark the block as free
@@ -224,7 +221,6 @@ TemporaryBlock *NvmeTemporaryBlockManager::PopFreeBlock(uint8_t free_list_index)
 }
 
 void NvmeTemporaryBlockManager::RemoveFreeBlock(TemporaryBlock *block) {
-
 	if (block->next_free_block != nullptr) {
 		block->next_free_block->previous_free_block = block->previous_free_block;
 	}
@@ -249,12 +245,10 @@ void NvmeTemporaryBlockManager::CoalesceFreeBlocks(TemporaryBlock *block) {
 	// Check if the previous block is free
 	if ((block->previous_block != nullptr && block->previous_block->IsFree()) &&
 	    (block->next_block != nullptr && block->next_block->IsFree())) {
-
 		block->start_lba = block->previous_block->start_lba; // Set the start lba to the previous blocks start lba
 		block->lba_amount += block->previous_block->lba_amount + block->next_block->lba_amount;
 
 		if (block->previous_block->previous_block != nullptr) {
-
 			unique_ptr<TemporaryBlock> old_left_block = move(block->previous_block->previous_block->next_block);
 
 			block->previous_block->previous_block->next_block =

@@ -10,8 +10,9 @@ struct GlobalMetadata;
 
 class TemporaryFileStrategy : public FileMetadataStrategy {
 public:
-	TemporaryFileStrategy(GlobalMetadata *metadata, unique_ptr<TemporaryFileMetadataManager> &temp_manager)
-	    : metadata(metadata), temp_manager(temp_manager) {
+	TemporaryFileStrategy(GlobalMetadata *metadata, NvmeDevice &device,
+	                      unique_ptr<TemporaryFileMetadataManager> &temp_manager)
+	    : metadata(metadata), device(device), temp_manager(temp_manager) {
 	}
 
 	idx_t GetLBA(const string &filename, idx_t nr_bytes, idx_t location, idx_t nr_lbas,
@@ -28,11 +29,11 @@ public:
 	}
 
 	void Truncate(const string &filename, idx_t new_size) override {
-		temp_manager->TruncateFile(filename, new_size);
+		temp_manager->TruncateFile(filename, new_size, device.device);
 	}
 
 	void RemoveFile(const string &filename) override {
-		temp_manager->DeleteFile(filename);
+		temp_manager->DeleteFile(filename, device.device);
 	}
 
 	idx_t GetSeekBound(const string &filename, const DeviceGeometry &geo) override {
@@ -78,6 +79,7 @@ public:
 
 private:
 	GlobalMetadata *metadata;
+	NvmeDevice &device;
 	unique_ptr<TemporaryFileMetadataManager> &temp_manager;
 };
 

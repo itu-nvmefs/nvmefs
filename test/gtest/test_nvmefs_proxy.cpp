@@ -21,7 +21,6 @@ protected:
 };
 
 class DiskInteractionTest : public testing::Test {
-
 protected:
 	DiskInteractionTest() {
 		// Set up the test environment
@@ -362,7 +361,6 @@ TEST_F(DiskInteractionTest, OpenFileProducesCorrectFileHandle) {
 }
 
 TEST_F(DiskInteractionTest, WriteAndReadData) {
-
 	// Create a file
 	string file_path = "nvmefs://test.db";
 	unique_ptr<FileHandle> file =
@@ -384,7 +382,6 @@ TEST_F(DiskInteractionTest, WriteAndReadData) {
 }
 
 TEST_F(DiskInteractionTest, WriteAndReadDataDoesNotOverlapOtherCategories) {
-
 	// Create a file
 	string file_path = "nvmefs://test.db";
 	string wal_file_path = "nvmefs://test.db.wal";
@@ -439,7 +436,6 @@ TEST_F(DiskInteractionTest, WriteAndReadDataDoesNotOverlapOtherCategories) {
 
 // TODO: Make this parameterized to test different byte offsets whithin different blocks
 TEST_F(DiskInteractionTest, WriteAndReadDataWithinBlock) {
-
 	// Create a file
 	string file_path = "nvmefs://test.db";
 	unique_ptr<FileHandle> file =
@@ -461,7 +457,6 @@ TEST_F(DiskInteractionTest, WriteAndReadDataWithinBlock) {
 }
 
 TEST_F(DiskInteractionTest, WriteAndReadDataWithSeek) {
-
 	// Create a file
 	string file_path = "nvmefs://test.db";
 	unique_ptr<FileHandle> file =
@@ -510,7 +505,6 @@ TEST_F(DiskInteractionTest, SeekOutOfDBMetadataBounds) {
 }
 
 TEST_F(DiskInteractionTest, SeekOutOfWALMetadataBounds) {
-
 	const uint64_t max_lba = 261503;
 	// Ensure that metadata is created
 	file_system->OpenFile("nvmefs://test.db", FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_READ);
@@ -526,7 +520,6 @@ TEST_F(DiskInteractionTest, SeekOutOfWALMetadataBounds) {
 }
 
 TEST_F(DiskInteractionTest, SeekOutOfTmpMetadataBounds) {
-
 	file_system->OpenFile("nvmefs://test.db", FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_READ);
 
 	// Create a file
@@ -1001,19 +994,16 @@ protected:
 };
 
 TEST_F(BlockManagerTest, FirstAllocateBlock) {
-
 	// Allocate a block of size 8
 	TemporaryBlock *block = block_manager->AllocateBlock(8);
 
 	// Check that the block is allocated correctly
 	EXPECT_EQ(block->GetStartLBA(), 0);
 	EXPECT_EQ(block->GetEndLBA(), 7);
-	EXPECT_EQ(block->GetSizeInBytes(), 8 * 4096);
 	EXPECT_EQ(block->IsFree(), false);
 }
 
 TEST_F(BlockManagerTest, AllocateTwiceInARow) {
-
 	// Allocate a block of size 8
 	TemporaryBlock *block = block_manager->AllocateBlock(8);
 	TemporaryBlock *block2 = block_manager->AllocateBlock(8);
@@ -1021,18 +1011,15 @@ TEST_F(BlockManagerTest, AllocateTwiceInARow) {
 	// Check that the block is allocated correctly
 	EXPECT_EQ(block->GetStartLBA(), 0);
 	EXPECT_EQ(block->GetEndLBA(), 7);
-	EXPECT_EQ(block->GetSizeInBytes(), 8 * 4096);
 	EXPECT_EQ(block->IsFree(), false);
 
 	EXPECT_EQ(block2->GetStartLBA(), 8);
 	EXPECT_EQ(block2->GetEndLBA(), 15);
-	EXPECT_EQ(block2->GetSizeInBytes(), 8 * 4096);
 	EXPECT_EQ(block2->IsFree(), false);
 	EXPECT_EQ(block->GetEndLBA() + 1, block2->GetStartLBA());
 }
 
 TEST_F(BlockManagerTest, AllocateFreeAndAllocateAgainYieldsSameBlock) {
-
 	// Allocate a block of size 8
 	TemporaryBlock *block = block_manager->AllocateBlock(8);
 
@@ -1047,13 +1034,11 @@ TEST_F(BlockManagerTest, AllocateFreeAndAllocateAgainYieldsSameBlock) {
 
 	EXPECT_EQ(block2->GetStartLBA(), start_lba);
 	EXPECT_EQ(block2->GetEndLBA(), end_lba);
-	EXPECT_EQ(block2->GetSizeInBytes(), size);
 	EXPECT_EQ(block2->IsFree(), is_free);
 }
 
 TEST_F(BlockManagerTest,
        AllocateSameSizeThreeTimesFreeTheMiddleAllocationAndAllocateALargerObjectYieldsBlockAfterBlock3) {
-
 	// Allocate a block of size 8
 	TemporaryBlock *block = block_manager->AllocateBlock(8);
 	TemporaryBlock *block2 = block_manager->AllocateBlock(8);
@@ -1073,13 +1058,11 @@ TEST_F(BlockManagerTest,
 
 	EXPECT_EQ(block4->GetStartLBA(), block3->GetEndLBA() + 1);
 	EXPECT_EQ(block4->GetEndLBA(), block4->GetStartLBA() + 15);
-	EXPECT_EQ(block4->GetSizeInBytes(), 16 * 4096);
 	EXPECT_EQ(block4->IsFree(), false);
 }
 
 TEST_F(BlockManagerTest,
        AllocateFreeBlocksAndFreeSurroundingBlocksAndAllocateALargerBlockYieldsBlockThatStartsFromSameLocation) {
-
 	// Allocate a block of size 8
 	TemporaryBlock *block = block_manager->AllocateBlock(8);
 	TemporaryBlock *block2 = block_manager->AllocateBlock(8);
@@ -1099,14 +1082,12 @@ TEST_F(BlockManagerTest,
 
 	EXPECT_EQ(block4->GetStartLBA(), 0);
 	EXPECT_EQ(block4->GetEndLBA(), 23);
-	EXPECT_EQ(block4->GetSizeInBytes(), 24 * 4096);
 	EXPECT_EQ(block4->IsFree(), false);
 }
 
 TEST_F(
     BlockManagerTest,
     AllocateBlocksAndFreeTheMiddleBlockToTriggerCoalescingToTheLeftAndAcquireANewBlockThatShouldStartFromTheSameLocation) {
-
 	// Allocate a block of size 8
 	TemporaryBlock *block = block_manager->AllocateBlock(8);
 	TemporaryBlock *block2 = block_manager->AllocateBlock(8);
@@ -1126,12 +1107,10 @@ TEST_F(
 
 	EXPECT_EQ(block4->GetStartLBA(), 0);
 	EXPECT_EQ(block4->GetEndLBA(), 15);
-	EXPECT_EQ(block4->GetSizeInBytes(), 16 * 4096);
 	EXPECT_EQ(block4->IsFree(), false);
 }
 
 TEST_F(BlockManagerTest, FreelistRemoveOneAtATime) {
-
 	// Allocate a block of size 8
 	TemporaryBlock *block1 = block_manager->AllocateBlock(8);
 	TemporaryBlock *block2 = block_manager->AllocateBlock(8);
@@ -1149,19 +1128,16 @@ TEST_F(BlockManagerTest, FreelistRemoveOneAtATime) {
 
 	EXPECT_EQ(block->GetStartLBA(), 24);
 	EXPECT_EQ(block->GetEndLBA(), 31);
-	EXPECT_EQ(block->GetSizeInBytes(), 8 * 4096);
 	EXPECT_EQ(block->IsFree(), false);
 
 	TemporaryBlock *block5 = block_manager->AllocateBlock(8);
 
 	EXPECT_EQ(block5->GetStartLBA(), 8);
 	EXPECT_EQ(block5->GetEndLBA(), 15);
-	EXPECT_EQ(block5->GetSizeInBytes(), 8 * 4096);
 	EXPECT_EQ(block5->IsFree(), false);
 }
 
 TEST_F(BlockManagerTest, FreelistCoalesceLeftAndRightInTheMiddle) {
-
 	// Allocate a block of size 8
 	TemporaryBlock *block1 = block_manager->AllocateBlock(8);
 	TemporaryBlock *block2 = block_manager->AllocateBlock(8);
@@ -1186,18 +1162,15 @@ TEST_F(BlockManagerTest, FreelistCoalesceLeftAndRightInTheMiddle) {
 
 	EXPECT_EQ(block->GetStartLBA(), 32);
 	EXPECT_EQ(block->GetEndLBA(), 47);
-	EXPECT_EQ(block->GetSizeInBytes(), 16 * 4096);
 	EXPECT_EQ(block->IsFree(), false);
 
 	TemporaryBlock *block11 = block_manager->AllocateBlock(8);
 	EXPECT_EQ(block11->GetStartLBA(), 48);
 	EXPECT_EQ(block11->GetEndLBA(), 55);
-	EXPECT_EQ(block11->GetSizeInBytes(), 8 * 4096);
 	EXPECT_EQ(block11->IsFree(), false);
 }
 
 TEST_F(BlockManagerTest, FreelistCoalesceLeftInTheMiddleOfTheList) {
-
 	// Allocate a block of size 8
 	TemporaryBlock *block1 = block_manager->AllocateBlock(8);
 	TemporaryBlock *block2 = block_manager->AllocateBlock(8);
@@ -1222,13 +1195,11 @@ TEST_F(BlockManagerTest, FreelistCoalesceLeftInTheMiddleOfTheList) {
 
 	EXPECT_EQ(block->GetStartLBA(), 32);
 	EXPECT_EQ(block->GetEndLBA(), 47);
-	EXPECT_EQ(block->GetSizeInBytes(), 16 * 4096);
 	EXPECT_EQ(block->IsFree(), false);
 
 	TemporaryBlock *block11 = block_manager->AllocateBlock(8);
 	EXPECT_EQ(block11->GetStartLBA(), 48);
 	EXPECT_EQ(block11->GetEndLBA(), 55);
-	EXPECT_EQ(block11->GetSizeInBytes(), 8 * 4096);
 	EXPECT_EQ(block11->IsFree(), false);
 }
 
@@ -1243,7 +1214,6 @@ protected:
 };
 
 TEST_F(TemporaryMetadataManagerTest, CreateFilesOfDifferentSizes) {
-
 	string tmp_file_path1 = StringUtil::Format("nvmefs:///tmp/duckdb_temp_storage_%s-%llu.tmp", "S32K", 0);
 	metadata_manager->CreateFile(tmp_file_path1);
 	auto file32 = metadata_manager->GetOrCreateFile(tmp_file_path1);

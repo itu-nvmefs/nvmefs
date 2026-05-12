@@ -13,7 +13,7 @@ public:
 	/// @param start_lba Start LBA of the block (inclusive)
 	/// @param lba_amount Number of LBAs in the block
 	TemporaryBlock(idx_t start_lba, idx_t lba_amount);
-	idx_t GetSizeInBytes();
+	idx_t GetLBAAmount();
 	idx_t GetStartLBA();
 	idx_t GetEndLBA();
 

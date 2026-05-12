@@ -111,6 +111,7 @@ private:
 	void InitializeMetadata(const string &filename);
 	unique_ptr<GlobalMetadata> ReadMetadata();
 	void WriteMetadata(GlobalMetadata &global);
+	NvmeDevice &GetNvmeDevice();
 
 private:
 	Allocator &allocator;
