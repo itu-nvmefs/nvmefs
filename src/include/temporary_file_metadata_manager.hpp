@@ -28,7 +28,7 @@ class TemporaryFileMetadataManager {
 public:
 	TemporaryFileMetadataManager(idx_t start_lba, idx_t end_lba, idx_t lba_size)
 	    : block_manager(make_uniq<NvmeTemporaryBlockManager>(start_lba, end_lba)), lba_size(lba_size),
-	      lba_amount(end_lba - start_lba) {
+	      lba_count(end_lba - start_lba) {
 	}
 
 	void CreateFile(const string &filename);
@@ -59,7 +59,7 @@ private:
 	void DSMBlock(TemporaryBlock *block, xnvme_dev *dev);
 
 	idx_t lba_size;
-	idx_t lba_amount;
+	idx_t lba_count;
 	unique_ptr<NvmeTemporaryBlockManager> block_manager;
 	map<string, unique_ptr<TempFileMetadata>> file_to_temp_meta;
 	static inline boost::shared_mutex temp_mutex;

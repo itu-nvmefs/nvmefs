@@ -265,7 +265,7 @@ void TemporaryFileMetadataManager::DSMBlock(TemporaryBlock *block, xnvme_dev *de
 	uint32_t nsid = xnvme_dev_get_nsid(dev);
 	struct xnvme_spec_dsm_range range = {
 	    .cattr = 0,
-	    .llb = static_cast<uint32_t>(block->GetLBAAmount()),
+	    .llb = static_cast<uint32_t>(block->GetLBACount()),
 	    .slba = block->GetStartLBA(),
 	};
 	xnvme_nvm_dsm(&ctx, nsid, &range, 0, true, false, false);
