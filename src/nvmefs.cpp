@@ -70,12 +70,15 @@ bool NvmeFileSystem::CanSeek() {
 
 ////////////////////////////////////////
 
-NvmeFileSystem::NvmeFileSystem(NvmeConfig config_p)
-    : allocator(Allocator::DefaultAllocator()), device(make_uniq<NvmeDevice>(config_p)), config(std::move(config_p)) {
+NvmeFileSystem::NvmeFileSystem(NvmeConfig config_p, std::shared_ptr<NvmeMetricsState> metrics_p)
+    : allocator(Allocator::DefaultAllocator()), device(make_uniq<NvmeDevice>(config_p)), config(std::move(config_p)),
+      metrics(std::move(metrics_p)) {
 }
 
-NvmeFileSystem::NvmeFileSystem(NvmeConfig config_p, unique_ptr<Device> device)
-    : allocator(Allocator::DefaultAllocator()), device(std::move(device)), config(std::move(config_p)) {
+NvmeFileSystem::NvmeFileSystem(NvmeConfig config_p, unique_ptr<Device> device,
+                               std::shared_ptr<NvmeMetricsState> metrics_p)
+    : allocator(Allocator::DefaultAllocator()), device(std::move(device)), config(std::move(config_p)),
+      metrics(std::move(metrics_p)) {
 }
 
 NvmeFileSystem::~NvmeFileSystem() {
@@ -146,7 +149,7 @@ unique_ptr<FileHandle> NvmeFileSystem::OpenFile(const string &path, FileOpenFlag
 	}
 
 	DatabaseRegion *region = GetRegionForPath(db_name);
-	if (!region && flags.CreateFileIfNotExists()) {
+	if (!region && flags.CreateFileIfNotExists() && type != NvmeFileType::TEMPORARY && type != NvmeFileType::UNKNOWN) {
 		AllocateNewDatabaseRegion(db_name);
 		region = GetRegionForPath(db_name);
 	}
@@ -158,9 +161,21 @@ unique_ptr<FileHandle> NvmeFileSystem::OpenFile(const string &path, FileOpenFlag
         strategy->CreateFile(path);
     }
 
-	return make_uniq<NvmeFileHandle>(*this, path, flags, std::move(strategy));
-}
+	auto handle = make_uniq<NvmeFileHandle>(*this, path, flags, std::move(strategy));
+	handle->file_type = type;
 
+	if (type != NvmeFileType::TEMPORARY && type != NvmeFileType::UNKNOWN) {
+		handle->op_state = GetRuntimeState(db_name);
+
+		std::lock_guard<std::mutex> lock(metrics->db_lock);
+		if (metrics->per_db.find(db_name) == metrics->per_db.end()) {
+			metrics->per_db[db_name] = make_uniq<DatabaseMetrics>();
+		}
+		handle->metrics_cache = metrics->per_db[db_name].get();
+	}
+
+	return std::move(handle);
+}
 void NvmeFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) {
 	NvmeFileHandle &fh = handle.Cast<NvmeFileHandle>();
 	DeviceGeometry geo = device->GetDeviceGeometry();
@@ -199,24 +214,39 @@ void NvmeFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, i
 
 	NvmeFileType file_type = NvmePathHandler::GetFileType(fh.GetPath());
 
-	if (file_type == NvmeFileType::TEMPORARY) {
-		nvmefs_total_spill_bytes += nr_bytes;
-	} else if (file_type == NvmeFileType::WAL) {
-		nvmefs_total_wal_bytes += nr_bytes;
-		uint64_t true_size = GetFileSize(handle);
-		nvmefs_current_wal_bytes.store(true_size);
+	if (fh.file_type == NvmeFileType::TEMPORARY) {
+		metrics->total_spill_bytes.fetch_add(nr_bytes, std::memory_order_relaxed);
+		return;
+	}
 
-		uint64_t peak = nvmefs_peak_wal_bytes.load();
-		while (true_size > peak && !nvmefs_peak_wal_bytes.compare_exchange_weak(peak, true_size)) {
-		}
-	} else if (file_type == NvmeFileType::DATABASE) {
-		nvmefs_total_db_bytes += nr_bytes;
+	if (fh.metrics_cache) {
+		uint64_t write_end = location + nr_bytes;
 
-		uint64_t true_size = GetFileSize(handle);
-		nvmefs_current_db_bytes.store(true_size);
+		if (fh.file_type == NvmeFileType::WAL) {
+			fh.metrics_cache->total_wal_bytes.fetch_add(nr_bytes, std::memory_order_relaxed);
 
-		uint64_t peak = nvmefs_peak_db_bytes.load();
-		while (true_size > peak && !nvmefs_peak_db_bytes.compare_exchange_weak(peak, true_size)) {
+			uint64_t current = fh.metrics_cache->current_wal_bytes.load(std::memory_order_relaxed);
+			while (write_end > current && !fh.metrics_cache->current_wal_bytes.compare_exchange_weak(
+			                                  current, write_end, std::memory_order_relaxed)) {
+			}
+
+			uint64_t peak = fh.metrics_cache->peak_wal_bytes.load(std::memory_order_relaxed);
+			while (write_end > peak && !fh.metrics_cache->peak_wal_bytes.compare_exchange_weak(
+			                               peak, write_end, std::memory_order_relaxed)) {
+			}
+
+		} else if (fh.file_type == NvmeFileType::DATABASE) {
+			fh.metrics_cache->total_db_bytes.fetch_add(nr_bytes, std::memory_order_relaxed);
+
+			uint64_t current = fh.metrics_cache->current_db_bytes.load(std::memory_order_relaxed);
+			while (write_end > current && !fh.metrics_cache->current_db_bytes.compare_exchange_weak(
+			                                  current, write_end, std::memory_order_relaxed)) {
+			}
+
+			uint64_t peak = fh.metrics_cache->peak_db_bytes.load(std::memory_order_relaxed);
+			while (write_end > peak &&
+			       !fh.metrics_cache->peak_db_bytes.compare_exchange_weak(peak, write_end, std::memory_order_relaxed)) {
+			}
 		}
 	}
 }

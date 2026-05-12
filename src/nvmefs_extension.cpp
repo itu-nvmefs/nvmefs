@@ -54,76 +54,68 @@ static unique_ptr<FunctionData> ConfigPrintBind(ClientContext &ctx, TableFunctio
 	return std::move(result);
 }
 
-// From nvmefs.cpp
-extern const std::atomic<uint64_t> nvmefs_total_spill_bytes;
-extern const std::atomic<uint64_t> nvmefs_total_wal_bytes;
-extern const std::atomic<uint64_t> nvmefs_current_wal_bytes;
-extern const std::atomic<uint64_t> nvmefs_peak_wal_bytes;
-extern const std::atomic<uint64_t> nvmefs_total_db_bytes;
-extern const std::atomic<uint64_t> nvmefs_current_db_bytes;
-extern const std::atomic<uint64_t> nvmefs_peak_db_bytes;
+static std::shared_ptr<NvmeMetricsState> global_metrics = std::make_shared<NvmeMetricsState>();
 
-// From temporary_file_metadata_manager.cpp
-extern const std::atomic<int64_t> nvmefs_active_temp_files;
-extern const std::atomic<int64_t> nvmefs_peak_temp_files;
+struct NvmeMetricsBindData : public TableFunctionData {
+	std::shared_ptr<NvmeMetricsState> metrics;
+	bool finished = false;
 
-// From nvmefs_temporary_block_manager.cpp
-extern const std::atomic<uint64_t> nvmefs_active_temp_bytes;
-extern const std::atomic<uint64_t> nvmefs_peak_temp_bytes;
+	explicit NvmeMetricsBindData(std::shared_ptr<NvmeMetricsState> m) : metrics(std::move(m)) {
+	}
+};
+
+static void EmitRow(DataChunk &output, idx_t &row, const string &name, uint64_t value) {
+	output.SetValue(0, row, Value(name));
+	output.SetValue(1, row, Value::UBIGINT(value));
+	row++;
+}
+
+static void EmitRow(DataChunk &output, idx_t &row, const string &name, int64_t value) {
+	output.SetValue(0, row, Value(name));
+	output.SetValue(1, row, Value::BIGINT(value));
+	row++;
+}
+
+static unique_ptr<FunctionData> MetricsBind(ClientContext &ctx, TableFunctionBindInput &input,
+                                            vector<LogicalType> &return_types, vector<string> &names) {
+	names.emplace_back("Setting");
+	return_types.emplace_back(LogicalType::VARCHAR);
+
+	names.emplace_back("Value");
+	return_types.emplace_back(LogicalType::UBIGINT);
+
+	auto result = make_uniq<NvmeMetricsBindData>(global_metrics);
+	return std::move(result);
+}
 
 static void MetricsPrint(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
-	auto &data = data_p.bind_data->CastNoConst<ConfigPrintFunctionData>();
-	if (data.finished) {
+	auto &data = data_p.bind_data->CastNoConst<NvmeMetricsBindData>();
+	if (data.finished)
 		return;
+
+	auto metrics = data.metrics;
+	idx_t row = 0;
+
+	EmitRow(output, row, "shared_temp.total_spill_bytes", metrics->total_spill_bytes.load(std::memory_order_relaxed));
+	EmitRow(output, row, "shared_temp.active_temp_files", metrics->active_temp_files.load(std::memory_order_relaxed));
+	EmitRow(output, row, "shared_temp.peak_temp_files", metrics->peak_temp_files.load(std::memory_order_relaxed));
+	EmitRow(output, row, "shared_temp.active_temp_bytes", metrics->active_temp_bytes.load(std::memory_order_relaxed));
+	EmitRow(output, row, "shared_temp.peak_temp_bytes", metrics->peak_temp_bytes.load(std::memory_order_relaxed));
+
+	std::lock_guard<std::mutex> lock(metrics->db_lock);
+	for (auto &kv : metrics->per_db) {
+		auto &db_name = kv.first;
+		auto &m = *kv.second;
+
+		EmitRow(output, row, db_name + ".total_wal_bytes", m.total_wal_bytes.load(std::memory_order_relaxed));
+		EmitRow(output, row, db_name + ".current_wal_bytes", m.current_wal_bytes.load(std::memory_order_relaxed));
+		EmitRow(output, row, db_name + ".peak_wal_bytes", m.peak_wal_bytes.load(std::memory_order_relaxed));
+
+		EmitRow(output, row, db_name + ".total_db_bytes", m.total_db_bytes.load(std::memory_order_relaxed));
+		EmitRow(output, row, db_name + ".current_db_bytes", m.current_db_bytes.load(std::memory_order_relaxed));
+		EmitRow(output, row, db_name + ".peak_db_bytes", m.peak_db_bytes.load(std::memory_order_relaxed));
 	}
-
-	idx_t row_idx = 0;
-
-	output.SetValue(0, row_idx, Value("total_spill_bytes"));
-	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_total_spill_bytes.load()));
-	row_idx++;
-
-	output.SetValue(0, row_idx, Value("total_wal_bytes"));
-	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_total_wal_bytes.load()));
-	row_idx++;
-
-	output.SetValue(0, row_idx, Value("current_wal_bytes"));
-	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_current_wal_bytes.load()));
-	row_idx++;
-
-	output.SetValue(0, row_idx, Value("peak_wal_bytes"));
-	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_peak_wal_bytes.load()));
-	row_idx++;
-
-	output.SetValue(0, row_idx, Value("active_temp_files"));
-	output.SetValue(1, row_idx, Value::BIGINT(nvmefs_active_temp_files.load()));
-	row_idx++;
-
-	output.SetValue(0, row_idx, Value("peak_temp_files"));
-	output.SetValue(1, row_idx, Value::BIGINT(nvmefs_peak_temp_files.load()));
-	row_idx++;
-
-	output.SetValue(0, row_idx, Value("active_temp_bytes"));
-	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_active_temp_bytes.load()));
-	row_idx++;
-
-	output.SetValue(0, row_idx, Value("peak_temp_bytes"));
-	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_peak_temp_bytes.load()));
-	row_idx++;
-
-	output.SetValue(0, row_idx, Value("total_db_bytes"));
-	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_total_db_bytes.load()));
-	row_idx++;
-
-	output.SetValue(0, row_idx, Value("current_db_bytes"));
-	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_current_db_bytes.load()));
-	row_idx++;
-
-	output.SetValue(0, row_idx, Value("peak_db_bytes"));
-	output.SetValue(1, row_idx, Value::UBIGINT(nvmefs_peak_db_bytes.load()));
-	row_idx++;
-
-	output.SetCardinality(row_idx);
+	output.SetCardinality(row);
 	data.finished = true;
 }
 
@@ -136,16 +128,17 @@ static void ActivatePragma(ClientContext &context, const FunctionParameters &par
 	// Add extension options
 	if (!nvmeConfig.device_path.empty()) {
 		auto &fs = instance.GetFileSystem();
-		auto nvmefs_ptr = make_uniq<NvmeFileSystem>(nvmeConfig);
+		auto nvmefs_ptr = make_uniq<NvmeFileSystem>(nvmeConfig, global_metrics);
 
 		fs.RegisterSubSystem(std::move(nvmefs_ptr));
 	} else {
+		duckdb::Printer::Print("[nvmefs] Extension activated but no nvme_device_path specified. NvmeFileSystem "
+		                       "will not be registered.");
 		duckdb::Printer::Print(
-		    "[nvmefs] Extension activated but no nvme_device_path specified. NvmeFileSystem will not be registered.");
-		duckdb::Printer::Print(duckdb::StringUtil::Format(
-		    "[nvmefs] To use the NvmeFileSystem, set the nvme_device_path configuration option in the '%s' secret to "
-		    "the path of the NVMe device and restart the database.",
-		    secret_name));
+		    duckdb::StringUtil::Format("[nvmefs] To use the NvmeFileSystem, set the nvme_device_path configuration "
+		                               "option in the '%s' secret to "
+		                               "the path of the NVMe device and restart the database.",
+		                               secret_name));
 	}
 }
 
@@ -158,7 +151,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 	TableFunction config_print_function("print_config", {}, ConfigPrint, ConfigPrintBind);
 	loader.RegisterFunction(config_print_function);
 
-	TableFunction metrics_print_function("print_nvmefs_metrics", {}, MetricsPrint, ConfigPrintBind);
+	TableFunction metrics_print_function("print_nvmefs_metrics", {}, MetricsPrint, MetricsBind);
 	loader.RegisterFunction(metrics_print_function);
 }
 

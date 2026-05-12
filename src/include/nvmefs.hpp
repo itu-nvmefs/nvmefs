@@ -39,6 +39,26 @@ struct DatabaseRuntimeState {
 	}
 };
 
+struct DatabaseMetrics {
+	std::atomic<uint64_t> total_wal_bytes {0};
+	std::atomic<uint64_t> current_wal_bytes {0};
+	std::atomic<uint64_t> peak_wal_bytes {0};
+	std::atomic<uint64_t> total_db_bytes {0};
+	std::atomic<uint64_t> current_db_bytes {0};
+	std::atomic<uint64_t> peak_db_bytes {0};
+};
+
+struct NvmeMetricsState {
+	std::atomic<uint64_t> total_spill_bytes {0};
+	std::atomic<int64_t> active_temp_files {0};
+	std::atomic<int64_t> peak_temp_files {0};
+	std::atomic<uint64_t> active_temp_bytes {0};
+	std::atomic<uint64_t> peak_temp_bytes {0};
+
+	std::mutex db_lock;
+	std::unordered_map<string, unique_ptr<DatabaseMetrics>> per_db;
+};
+
 struct TemporaryFileMetadata {
 	uint64_t block_size;
 	map<idx_t, TemporaryBlock *> block_map;
@@ -64,6 +84,10 @@ public:
 		return strategy.get();
 	}
 
+	NvmeFileType file_type;
+	DatabaseRuntimeState *op_state = nullptr;
+	DatabaseMetrics *metrics_cache = nullptr;
+
 private:
 	unique_ptr<CmdContext> PrepareCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset);
 
@@ -82,8 +106,8 @@ private:
 
 class NvmeFileSystem : public FileSystem {
 public:
-	explicit NvmeFileSystem(NvmeConfig config);
-	NvmeFileSystem(NvmeConfig config, unique_ptr<Device> device);
+	explicit NvmeFileSystem(NvmeConfig config, std::shared_ptr<NvmeMetricsState> metrics);
+	NvmeFileSystem(NvmeConfig config, unique_ptr<Device> device, std::shared_ptr<NvmeMetricsState> metrics);
 	~NvmeFileSystem() override;
 
 	unique_ptr<FileHandle> OpenFile(const string &path, FileOpenFlags flags,
@@ -138,6 +162,7 @@ private:
 	unique_ptr<TemporaryFileMetadataManager> temp_meta_manager;
 	NvmeConfig config;
 	std::unordered_map<string, unique_ptr<DatabaseRuntimeState>> active_dbs;
+	std::shared_ptr<NvmeMetricsState> metrics;
 	static std::recursive_mutex temp_lock;
 };
 } // namespace duckdb
