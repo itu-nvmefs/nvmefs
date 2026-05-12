@@ -3,6 +3,8 @@
 #include "duckdb/main/settings.hpp"
 #include "duckdb/main/secret/secret.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
+#include <algorithm>
+#include <cctype>
 
 namespace duckdb {
 
@@ -31,6 +33,8 @@ void SetNvmefsSecretParameters(CreateSecretFunction &function) {
 	function.named_parameters["backend"] = LogicalType::VARCHAR;
 	function.named_parameters["meta"] = LogicalType::VARCHAR;
 	function.named_parameters["fdp_mapping"] = LogicalType::VARCHAR;
+	function.named_parameters["db_configs"] = LogicalType::VARCHAR;
+    function.named_parameters["default_db_size"] = LogicalType::VARCHAR;
 }
 
 void RegisterCreateNvmefsSecretFunciton(ExtensionLoader &loader) {
@@ -77,7 +81,7 @@ NvmeConfig NvmeConfigManager::LoadConfig(ClientContext &context, const string &s
 	if (config.options.maximum_swap_space != DConstants::INVALID_INDEX) {
 		max_temp_size = static_cast<idx_t>(config.options.maximum_swap_space);
 	}
-	idx_t max_wal_size = 1ULL << 25; // 32 MiB
+	idx_t max_wal_size = 1ULL << 30; // 1 GiB
 
 	auto &instance = DatabaseInstance::GetDatabase(context);
 	idx_t max_threads = config.GetSystemMaxThreads(instance.GetFileSystem());
@@ -86,6 +90,8 @@ NvmeConfig NvmeConfigManager::LoadConfig(ClientContext &context, const string &s
 	string backend;
 	string meta;
 	string fdp_mapping_str;
+	string db_configs_str;
+	string default_db_size_str = "20GB";
 
 	Value result;
 	if (kv_secret.TryGetValue("nvme_device_path", result)) {
@@ -99,6 +105,12 @@ NvmeConfig NvmeConfigManager::LoadConfig(ClientContext &context, const string &s
 	}
 	if (kv_secret.TryGetValue("fdp_mapping", result)) {
 		fdp_mapping_str = result.GetValue<string>();
+	}
+	if (kv_secret.TryGetValue("db_configs", result)) {
+    	db_configs_str = result.GetValue<string>();
+	}
+	if (kv_secret.TryGetValue("default_db_size", result)) {
+    	default_db_size_str = result.GetValue<string>();
 	}
 
 	config.AddExtensionOption("nvme_device_path", "Path to NVMe device", {LogicalType::VARCHAR}, Value(device));
@@ -141,13 +153,41 @@ NvmeConfig NvmeConfigManager::LoadConfig(ClientContext &context, const string &s
 		}
 	}
 
+	// Parse DB config
+	auto ParseSize = [](const string& size_str) -> idx_t {
+    	idx_t multiplier = 1;
+    	if (StringUtil::EndsWith(size_str, "GB")) multiplier = 1ULL << 30;
+    	else if (StringUtil::EndsWith(size_str, "MB")) multiplier = 1ULL << 20;
+    	return std::stoull(size_str) * multiplier;
+	};
+
+	auto RemoveWhitespace = [](string str) {
+    str.erase(std::remove_if(str.begin(), str.end(), ::isspace), str.end());
+    return str;
+	};
+
+	std::unordered_map<string, idx_t> db_configs;
+	if (!db_configs_str.empty()) {
+    	auto pairs = StringUtil::Split(db_configs_str, ",");
+    	for (const auto &pair : pairs) {
+        	auto kv = StringUtil::Split(pair, ":");
+        	if (kv.size() == 2) {
+            	string key = StringUtil::Lower(RemoveWhitespace(kv[0]));
+            	db_configs[key] = ParseSize(RemoveWhitespace(kv[1]));
+        	}
+    	}
+	}
+
 	return NvmeConfig {.device_path = device,
 	                   .backend = backend,
 	                   .meta = meta,
 	                   .max_temp_size = max_temp_size,
 	                   .max_wal_size = max_wal_size,
 	                   .max_threads = max_threads,
-	                   .fdp_mapping = fdp_mapping};
+	                   .fdp_mapping = fdp_mapping,
+					   .db_configs = db_configs,
+    				   .default_db_size = ParseSize(RemoveWhitespace(default_db_size_str))
+					};
 }
 
 string NvmeConfigManager::SanatizeBackend(const string &backend) {
