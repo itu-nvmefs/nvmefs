@@ -16,26 +16,27 @@ namespace duckdb {
 #define MAX_NVME_DATABASES 16
 
 struct DatabaseRegion {
-    uint64_t db_path_size;
-    char db_path[101];
-    uint64_t db_start;
-    uint64_t wal_start;
+	uint64_t db_path_size;
+	char db_path[101];
+	uint64_t db_start;
+	uint64_t wal_start;
 	uint64_t wal_end;
-    uint64_t db_location;
-    uint64_t wal_location;
-    bool is_active;
+	uint64_t db_location;
+	uint64_t wal_location;
+	bool is_active;
 };
 
 struct GlobalMetadata {
-    uint64_t tmp_start;
-    uint32_t active_databases;
-    DatabaseRegion databases[MAX_NVME_DATABASES];
+	uint64_t tmp_start;
+	uint32_t active_databases;
+	DatabaseRegion databases[MAX_NVME_DATABASES];
 };
 
 struct DatabaseRuntimeState {
-    std::atomic<idx_t> db_location;
-    std::atomic<idx_t> wal_location;
-    DatabaseRuntimeState(idx_t db, idx_t wal) : db_location(db), wal_location(wal) {}
+	std::atomic<idx_t> db_location;
+	std::atomic<idx_t> wal_location;
+	DatabaseRuntimeState(idx_t db, idx_t wal) : db_location(db), wal_location(wal) {
+	}
 };
 
 struct TemporaryFileMetadata {
@@ -128,15 +129,15 @@ private:
 	NvmeDevice &GetNvmeDevice();
 	DatabaseRegion* GetRegionForPath(const string &db_name);
 	DatabaseRuntimeState *GetRuntimeState(const string &db_name);
-    void AllocateNewDatabaseRegion(const string &db_name);
+	void AllocateNewDatabaseRegion(const string &db_name);
 
 private:
-    Allocator &allocator;
-    unique_ptr<GlobalMetadata> metadata;
-    unique_ptr<Device> device;
-    unique_ptr<TemporaryFileMetadataManager> temp_meta_manager;
-    NvmeConfig config; 
-    std::unordered_map<string, unique_ptr<DatabaseRuntimeState>> active_dbs;
-    static std::recursive_mutex temp_lock;
+	Allocator &allocator;
+	unique_ptr<GlobalMetadata> metadata;
+	unique_ptr<Device> device;
+	unique_ptr<TemporaryFileMetadataManager> temp_meta_manager;
+	NvmeConfig config;
+	std::unordered_map<string, unique_ptr<DatabaseRuntimeState>> active_dbs;
+	static std::recursive_mutex temp_lock;
 };
 } // namespace duckdb

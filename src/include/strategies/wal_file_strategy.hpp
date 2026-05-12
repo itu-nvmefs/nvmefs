@@ -10,10 +10,11 @@ struct GlobalMetadata;
 
 class WALFileStrategy : public FileMetadataStrategy {
 public:
-	WALFileStrategy(DatabaseRegion *region, atomic<idx_t> &wal_location)
-	    : region(region), wal_location(wal_location) { }
+	WALFileStrategy(DatabaseRegion *region, atomic<idx_t> &wal_location) : region(region), wal_location(wal_location) {
+	}
 
-	idx_t GetLBA(const string &filename, idx_t nr_bytes, idx_t location, idx_t nr_lbas, const DeviceGeometry &geo) override {
+	idx_t GetLBA(const string &filename, idx_t nr_bytes, idx_t location, idx_t nr_lbas,
+	             const DeviceGeometry &geo) override {
 		return region->wal_start + (location / geo.lba_size);
 	}
 
@@ -32,7 +33,8 @@ public:
 		idx_t expected_location = wal_location.load();
 		idx_t new_location = region->wal_start + nr_lbas;
 
-		while (!wal_location.compare_exchange_weak(expected_location, new_location));
+		while (!wal_location.compare_exchange_weak(expected_location, new_location))
+			;
 	}
 
 	void RemoveFile(const string &filename) override {
@@ -48,8 +50,10 @@ public:
 		idx_t current_start = region->wal_start;
 		idx_t current_end = region->wal_end - 1;
 
-		if (start_lba < current_start) return false;
-		if (lba_count > 0 && (start_lba + lba_count - 1) > current_end) return false;
+		if (start_lba < current_start)
+			return false;
+		if (lba_count > 0 && (start_lba + lba_count - 1) > current_end)
+			return false;
 		return true;
 	}
 
@@ -59,7 +63,8 @@ public:
 		idx_t new_location = ctx.start_lba + ctx.nr_lbas;
 
 		do {
-			if (new_location < expected_location) break;
+			if (new_location < expected_location)
+				break;
 		} while (!wal_location.compare_exchange_weak(expected_location, new_location));
 	}
 

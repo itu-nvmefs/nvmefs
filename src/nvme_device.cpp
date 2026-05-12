@@ -5,6 +5,7 @@
 #include "io_engines/nvme_async_prefetch_io_engine.hpp"
 #include "buffer_allocators/nvme_default_buffer_allocator.hpp"
 #include "buffer_allocators/nvme_cached_buffer_allocator.hpp"
+#include "nvmefs_path_handler.hpp"
 
 namespace duckdb {
 thread_local optional_idx NvmeDevice::index = optional_idx();
@@ -22,7 +23,7 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 	// Set the callback function for completed commands. No callback arguments, hence last argument equal to NULL
 	queues = vector<xnvme_queue *>(max_threads, nullptr);
 
-	use_fdp = !config.fdp_mapping.empty();
+	use_fdp = config.use_fdp;
 	bool fdp_capable = CheckFDP();
 	if (use_fdp && !fdp_capable) {
 		throw IOException("[nvmefs] FDP Requested but device does not support it");
@@ -74,11 +75,38 @@ DeviceGeometry NvmeDevice::GetDeviceGeometry() {
 }
 
 uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
-	for (const auto &entry : allocated_placement_identifiers) {
-		// Check if the file path ends with the extension defined in the key
-		if (StringUtil::EndsWith(path, entry.first)) {
-			return entry.second;
+	NvmeFileType type = NvmePathHandler::GetFileType(path);
+
+	string suffix;
+	switch (type) {
+	case NvmeFileType::DATABASE:
+		suffix = ".db";
+		break;
+	case NvmeFileType::WAL:
+		suffix = ".wal";
+		break;
+	case NvmeFileType::TEMPORARY:
+		suffix = ".tmp";
+		break;
+	default:
+		return 0;
+	}
+
+	// Use database name with suffix
+	if (type != NvmeFileType::TEMPORARY) {
+		string db_name = NvmePathHandler::ExtractDatabaseName(path);
+		if (!db_name.empty()) {
+			auto it = allocated_placement_identifiers.find(db_name + suffix);
+			if (it != allocated_placement_identifiers.end()) {
+				return it->second;
+			}
 		}
+	}
+
+	// Fallback to global suffix
+	auto it = allocated_placement_identifiers.find(suffix);
+	if (it != allocated_placement_identifiers.end()) {
+		return it->second;
 	}
 
 	// Default fallback RUH
