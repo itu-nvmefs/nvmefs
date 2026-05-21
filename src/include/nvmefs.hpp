@@ -50,11 +50,6 @@ struct DatabaseMetrics {
 
 struct NvmeMetricsState {
 	std::atomic<uint64_t> total_spill_bytes {0};
-	std::atomic<int64_t> active_temp_files {0};
-	std::atomic<int64_t> peak_temp_files {0};
-	std::atomic<uint64_t> active_temp_bytes {0};
-	std::atomic<uint64_t> peak_temp_bytes {0};
-
 	std::mutex db_lock;
 	std::unordered_map<string, unique_ptr<DatabaseMetrics>> per_db;
 };

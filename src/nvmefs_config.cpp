@@ -82,7 +82,7 @@ NvmeConfig NvmeConfigManager::LoadConfig(ClientContext &context, const string &s
 	if (config.options.maximum_swap_space != DConstants::INVALID_INDEX) {
 		max_temp_size = static_cast<idx_t>(config.options.maximum_swap_space);
 	}
-	idx_t max_wal_size = 1ULL << 30; // 1 GiB
+	idx_t max_wal_size = 1ULL << 25; // 32 MiB
 
 	auto &instance = DatabaseInstance::GetDatabase(context);
 	idx_t max_threads = config.GetSystemMaxThreads(instance.GetFileSystem());

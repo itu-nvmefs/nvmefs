@@ -88,6 +88,11 @@ static unique_ptr<FunctionData> MetricsBind(ClientContext &ctx, TableFunctionBin
 	return std::move(result);
 }
 
+extern std::atomic<uint64_t> nvmefs_active_temp_bytes;
+extern std::atomic<uint64_t> nvmefs_peak_temp_bytes;
+extern std::atomic<int64_t> nvmefs_active_temp_files;
+extern std::atomic<int64_t> nvmefs_peak_temp_files;
+
 static void MetricsPrint(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
 	auto &data = data_p.bind_data->CastNoConst<NvmeMetricsBindData>();
 	if (data.finished)
@@ -97,10 +102,10 @@ static void MetricsPrint(ClientContext &context, TableFunctionInput &data_p, Dat
 	idx_t row = 0;
 
 	EmitRow(output, row, "shared_temp.total_spill_bytes", metrics->total_spill_bytes.load(std::memory_order_relaxed));
-	EmitRow(output, row, "shared_temp.active_temp_files", metrics->active_temp_files.load(std::memory_order_relaxed));
-	EmitRow(output, row, "shared_temp.peak_temp_files", metrics->peak_temp_files.load(std::memory_order_relaxed));
-	EmitRow(output, row, "shared_temp.active_temp_bytes", metrics->active_temp_bytes.load(std::memory_order_relaxed));
-	EmitRow(output, row, "shared_temp.peak_temp_bytes", metrics->peak_temp_bytes.load(std::memory_order_relaxed));
+	EmitRow(output, row, "shared_temp.active_temp_bytes", nvmefs_active_temp_bytes.load(std::memory_order_relaxed));
+	EmitRow(output, row, "shared_temp.peak_temp_bytes", nvmefs_peak_temp_bytes.load(std::memory_order_relaxed));
+	EmitRow(output, row, "shared_temp.active_temp_files", nvmefs_active_temp_files.load(std::memory_order_relaxed));
+	EmitRow(output, row, "shared_temp.peak_temp_files", nvmefs_peak_temp_files.load(std::memory_order_relaxed));
 
 	std::lock_guard<std::mutex> lock(metrics->db_lock);
 	for (auto &kv : metrics->per_db) {

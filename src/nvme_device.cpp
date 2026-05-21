@@ -183,20 +183,29 @@ void NvmeDevice::PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_c
                                      bool write) {
 	const NvmeCmdContext &nvme_cmd_ctx = static_cast<const NvmeCmdContext &>(cmd_ctx);
 
-	// Specified by the command set specification:
-	// https://nvmexpress.org/wp-content/uploads/NVM-Express-NVM-Command-Set-Specification-Revision-1.1-2024.08.05-Ratified.pdf
-	// cdw12 specifies data placement (dtype) and number of lbas to write/read (0 indexed)
-	// cdw13 hold placement handle id in bit range 16-31
 	uint16_t nr_lbas = nvme_cmd_ctx.nr_lbas - 1;
-
 	ctx->cmd.common.cdw12 = nr_lbas;
+
 	if (write && use_fdp) {
 		ctx->cmd.common.cdw12 |= dtype << 20;
 
-		if (plid_idx >= placement_handlers.size()) {
-			plid_idx = 0; // Fallback to default
+		uint16_t phid = placement_handlers.empty() ? 0 : placement_handlers[0]; // Fallback
+
+		// FIX: Match the requested ID directly to the physical Placement Identifier
+		for (uint16_t pi : placement_handlers) {
+			if (pi == plid_idx) {
+				phid = pi;
+				break;
+			}
 		}
-		uint16_t phid = placement_handlers[plid_idx];
+
+		// --- DEBUG PRINT (Limited to 10 lines to avoid terminal flooding) ---
+		static std::atomic<int> dbg_prints {0};
+		if (dbg_prints.fetch_add(1) < 10) {
+			duckdb::Printer::Print(StringUtil::Format(
+			    "[FDP Debug IO] DuckDB configured FDP ID: %d -> Sending to NVMe PI: %d", plid_idx, phid));
+		}
+
 		ctx->cmd.common.cdw13 = phid << 16;
 	}
 }
@@ -214,13 +223,17 @@ void NvmeDevice::InitializePlacementHandles() {
 	uint32_t nsid = xnvme_dev_get_nsid(device);
 	xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
 
-	// Retrieve number of RUHs on the device
 	struct xnvme_spec_ruhs header;
 	uint32_t header_bytes = sizeof(header);
 	xnvme_nvm_mgmt_recv(&xnvme_ctx, nsid, XNVME_SPEC_IO_MGMT_RECV_RUHS, 0, &header, header_bytes);
-	uint16_t max_placement_handles = header.nruhsd - 1;
 
-	// Retrieve information about reclaim unit handles
+	// --- DEBUG PRINT: What does the NVMe controller actually report? ---
+	duckdb::Printer::Print(StringUtil::Format("[FDP Debug] Hardware reported nruhsd (0-based) = %d", header.nruhsd));
+
+	// Fix: +1 to get the true count for the loop limit
+	uint16_t max_placement_handles = header.nruhsd;
+	duckdb::Printer::Print(StringUtil::Format("[FDP Debug] Parsing %d handles...", max_placement_handles));
+
 	struct xnvme_spec_ruhs *ruhs = nullptr;
 	uint32_t ruhs_nbytes = sizeof(*ruhs) + max_placement_handles * sizeof(struct xnvme_spec_ruhs_desc);
 	ruhs = (struct xnvme_spec_ruhs *)xnvme_buf_alloc(device, ruhs_nbytes);
@@ -229,6 +242,7 @@ void NvmeDevice::InitializePlacementHandles() {
 
 	for (int i = 0; i < max_placement_handles; ++i) {
 		placement_handlers.emplace_back(ruhs->desc[i].pi);
+		duckdb::Printer::Print(StringUtil::Format("[FDP Debug] placement_handlers[%d] = PI %d", i, ruhs->desc[i].pi));
 	}
 
 	xnvme_buf_free(device, ruhs);

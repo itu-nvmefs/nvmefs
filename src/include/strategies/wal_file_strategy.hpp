@@ -33,6 +33,10 @@ public:
 		idx_t expected_location = wal_location.load();
 		idx_t new_location = region->wal_start + nr_lbas;
 
+		if (new_location > region->wal_end) {
+            throw IOException("WAL Truncate failed: WAL exceeded its physical partition.");
+        }
+
 		while (!wal_location.compare_exchange_weak(expected_location, new_location))
 			;
 	}

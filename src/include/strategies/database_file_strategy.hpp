@@ -33,6 +33,10 @@ public:
 		idx_t expected_location = db_location.load();
 		idx_t new_location = region->db_start + nr_lbas;
 
+		if (new_location > region->wal_start) {
+            throw IOException("DB Truncate failed: Exceeded into WAL region.");
+        }
+
 		while (!db_location.compare_exchange_weak(expected_location, new_location))
 			;
 	}

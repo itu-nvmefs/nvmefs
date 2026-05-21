@@ -309,11 +309,6 @@ bool NvmeFileSystem::OnDiskFile(FileHandle &handle) {
 
 void NvmeFileSystem::Truncate(FileHandle &handle, int64_t new_size) {
 	NvmeFileHandle &nvme_handle = handle.Cast<NvmeFileHandle>();
-	int64_t current_size = GetFileSize(nvme_handle);
-
-	if (new_size > current_size) {
-		throw InvalidInputException("new_size is bigger than the current file size.");
-	}
 
 	FileMetadataStrategy *strategy = nvme_handle.GetStrategy();
 	strategy->Truncate(nvme_handle.path, new_size);
