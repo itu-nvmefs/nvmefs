@@ -11,9 +11,9 @@ class TemporaryBlock {
 public:
 	/// @brief Constructor for TemporaryBlock
 	/// @param start_lba Start LBA of the block (inclusive)
-	/// @param lba_amount Number of LBAs in the block
-	TemporaryBlock(idx_t start_lba, idx_t lba_amount);
-	idx_t GetSizeInBytes();
+	/// @param lba_count Number of LBAs in the block
+	TemporaryBlock(idx_t start_lba, idx_t lba_count);
+	idx_t GetLBACount();
 	idx_t GetStartLBA();
 	idx_t GetEndLBA();
 
@@ -21,7 +21,7 @@ public:
 
 private:
 	idx_t start_lba;
-	idx_t lba_amount;
+	idx_t lba_count;
 	bool is_free;
 
 	// The next and previous blocks in the linked list
@@ -38,18 +38,18 @@ public:
 	NvmeTemporaryBlockManager(idx_t allocated_lba_start, idx_t allocated_lba_end);
 
 public:
-	TemporaryBlock *AllocateBlock(idx_t lba_amount);
+	TemporaryBlock *AllocateBlock(idx_t lba_count);
 	void FreeBlock(TemporaryBlock *block);
 
 private:
-	uint8_t GetFreeListIndex(idx_t lba_amount);
+	uint8_t GetFreeListIndex(idx_t lba_count);
 
 	/// @brief Splits a block into two blocks. The first block will be the requested size and the second block will be
 	/// the remaining size.
 	/// @param block The block to split
-	/// @param lba_amount Amount that the new splitted block should have
+	/// @param lba_count Amount that the new splitted block should have
 	/// @return The splitted block
-	TemporaryBlock *SplitBlock(TemporaryBlock *block, idx_t lba_amount);
+	TemporaryBlock *SplitBlock(TemporaryBlock *block, idx_t lba_count);
 	void PrintBlocks(TemporaryBlock *block);
 	void PrintBlocksBackwards(TemporaryBlock *block);
 

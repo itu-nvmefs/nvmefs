@@ -1,6 +1,9 @@
 #include "temporary_file_metadata_manager.hpp"
+#include "nvmefs_temporary_block_manager.hpp"
 #include <iostream>
 #include <atomic>
+#include <libxnvme.h>
+#include <libxnvme_nvm.h>
 
 namespace duckdb {
 
@@ -8,7 +11,6 @@ std::atomic<int64_t> nvmefs_active_temp_files {0};
 std::atomic<int64_t> nvmefs_peak_temp_files {0};
 
 inline idx_t GetBufferSize(const string buffer_size_string) {
-
 	if (!buffer_size_string.compare("S32K")) {
 		return 32768;
 	} else if (!buffer_size_string.compare("S64K")) {
@@ -31,7 +33,6 @@ inline idx_t GetBufferSize(const string buffer_size_string) {
 }
 
 inline unique_ptr<TempFileMetadata> CreateTempFileMetadata(const string &filename) {
-
 	unique_ptr<TempFileMetadata> tfmeta = make_uniq<TempFileMetadata>();
 	tfmeta->is_active.store(true);
 
@@ -61,7 +62,6 @@ inline unique_ptr<TempFileMetadata> CreateTempFileMetadata(const string &filenam
 }
 
 const TempFileMetadata *TemporaryFileMetadataManager::GetOrCreateFile(const string &filename) {
-
 	// Lock the shared mutex for writing
 	{
 		boost::shared_lock<boost::shared_mutex> alloc_lock(temp_mutex);
@@ -109,7 +109,6 @@ idx_t TemporaryFileMetadataManager::GetLBA(const string &filename, idx_t locatio
 		}
 
 		if (tfmeta->block_map.count(block_index)) {
-
 			return tfmeta->block_map[block_index]->GetStartLBA();
 		}
 	}
@@ -153,7 +152,7 @@ void TemporaryFileMetadataManager::MoveLBALocation(const string &filename, idx_t
 	// printf("MoveLBALocation %s, location %d\n", filename.c_str(), lba_location);
 }
 
-void TemporaryFileMetadataManager::TruncateFile(const string &filename, idx_t new_size) {
+void TemporaryFileMetadataManager::TruncateFile(const string &filename, idx_t new_size, xnvme_dev *dev) {
 	boost::unique_lock<boost::shared_mutex> lock(temp_mutex);
 
 	TempFileMetadata *tfmeta = file_to_temp_meta[filename].get();
@@ -168,19 +167,22 @@ void TemporaryFileMetadataManager::TruncateFile(const string &filename, idx_t ne
 		TemporaryBlock *block = tfmeta->block_map[block_index];
 		block_manager->FreeBlock(block);
 		tfmeta->block_map.erase(block_index);
+		DSMBlock(block, dev);
 	}
 
 	// file_to_temp_meta[nvme_handle.path] = tfmeta;
 }
 
-void TemporaryFileMetadataManager::DeleteFile(const string &filename) {
+void TemporaryFileMetadataManager::DeleteFile(const string &filename, xnvme_dev *dev) {
 	boost::unique_lock<boost::shared_mutex> lock(temp_mutex);
 
 	TempFileMetadata *tfmeta = file_to_temp_meta[filename].get();
 	{
 		boost::unique_lock<boost::shared_mutex> file_lock(tfmeta->file_mutex);
 		for (const auto &kv : tfmeta->block_map) {
-			block_manager->FreeBlock(kv.second);
+			TemporaryBlock *block = kv.second;
+			block_manager->FreeBlock(block);
+			DSMBlock(block, dev);
 		}
 	}
 
@@ -256,6 +258,17 @@ void TemporaryFileMetadataManager::ListFiles(const string &directory,
 	for (const auto &kv : file_to_temp_meta) {
 		callback(StringUtil::GetFileName(kv.first), false);
 	}
+}
+
+void TemporaryFileMetadataManager::DSMBlock(TemporaryBlock *block, xnvme_dev *dev) {
+	struct xnvme_cmd_ctx ctx = xnvme_cmd_ctx_from_dev(dev);
+	uint32_t nsid = xnvme_dev_get_nsid(dev);
+	struct xnvme_spec_dsm_range range = {
+	    .cattr = 0,
+	    .llb = static_cast<uint32_t>(block->GetLBACount()),
+	    .slba = block->GetStartLBA(),
+	};
+	xnvme_nvm_dsm(&ctx, nsid, &range, 0, true, false, false);
 }
 
 } // namespace duckdb

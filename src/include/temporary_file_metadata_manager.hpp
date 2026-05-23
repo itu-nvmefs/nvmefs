@@ -5,6 +5,7 @@
 #include <atomic>
 #include <boost/thread/shared_mutex.hpp> // sudo apt-get install libboost-all-dev
 #include <boost/thread/locks.hpp>
+#include <libxnvme.h>
 #include <shared_mutex>
 
 namespace duckdb {
@@ -27,16 +28,16 @@ class TemporaryFileMetadataManager {
 public:
 	TemporaryFileMetadataManager(idx_t start_lba, idx_t end_lba, idx_t lba_size)
 	    : block_manager(make_uniq<NvmeTemporaryBlockManager>(start_lba, end_lba)), lba_size(lba_size),
-	      lba_amount(end_lba - start_lba) {
+	      lba_count(end_lba - start_lba) {
 	}
 
 	void CreateFile(const string &filename);
 
 	idx_t GetLBA(const string &filename, idx_t location, idx_t nr_lbas);
 
-	void TruncateFile(const string &filename, idx_t new_size);
+	void TruncateFile(const string &filename, idx_t new_size, xnvme_dev *dev);
 
-	void DeleteFile(const string &filename);
+	void DeleteFile(const string &filename, xnvme_dev *dev);
 
 	void MoveLBALocation(const string &filename, idx_t lba_location);
 
@@ -55,8 +56,10 @@ public:
 	const TempFileMetadata *GetOrCreateFile(const string &filename);
 
 private:
+	void DSMBlock(TemporaryBlock *block, xnvme_dev *dev);
+
 	idx_t lba_size;
-	idx_t lba_amount;
+	idx_t lba_count;
 	unique_ptr<NvmeTemporaryBlockManager> block_manager;
 	map<string, unique_ptr<TempFileMetadata>> file_to_temp_meta;
 	static inline boost::shared_mutex temp_mutex;

@@ -7,17 +7,16 @@ namespace duckdb {
 std::atomic<uint64_t> nvmefs_active_temp_bytes {0};
 std::atomic<uint64_t> nvmefs_peak_temp_bytes {0};
 
-TemporaryBlock::TemporaryBlock(idx_t start_lba, idx_t lba_amount)
-    : start_lba(start_lba), lba_amount(lba_amount), is_free(false) {
-
+TemporaryBlock::TemporaryBlock(idx_t start_lba, idx_t lba_count)
+    : start_lba(start_lba), lba_count(lba_count), is_free(false) {
 	next_block = nullptr;
 	previous_block = nullptr;
 	next_free_block = nullptr;
 	previous_free_block = nullptr;
 }
 
-idx_t TemporaryBlock::GetSizeInBytes() {
-	return lba_amount * 4096; // TODO: Get the LBA size from the device
+idx_t TemporaryBlock::GetLBACount() {
+	return lba_count;
 }
 
 idx_t TemporaryBlock::GetStartLBA() {
@@ -25,7 +24,7 @@ idx_t TemporaryBlock::GetStartLBA() {
 }
 
 idx_t TemporaryBlock::GetEndLBA() {
-	return start_lba + lba_amount - 1;
+	return start_lba + lba_count - 1;
 }
 
 bool TemporaryBlock::IsFree() {
@@ -43,33 +42,33 @@ NvmeTemporaryBlockManager::NvmeTemporaryBlockManager(idx_t allocated_lba_start, 
 	blocks->is_free = true;        // Mark the block as free
 }
 
-uint8_t NvmeTemporaryBlockManager::GetFreeListIndex(idx_t lba_amount) {
+uint8_t NvmeTemporaryBlockManager::GetFreeListIndex(idx_t lba_count) {
 	// Get the index of the free list for the given size
-	if (lba_amount <= 8) {
+	if (lba_count <= 8) {
 		return 0;
-	} else if (lba_amount <= 16) {
+	} else if (lba_count <= 16) {
 		return 1;
-	} else if (lba_amount <= 24) {
+	} else if (lba_count <= 24) {
 		return 2;
-	} else if (lba_amount <= 32) {
+	} else if (lba_count <= 32) {
 		return 3;
-	} else if (lba_amount <= 40) {
+	} else if (lba_count <= 40) {
 		return 4;
-	} else if (lba_amount <= 48) {
+	} else if (lba_count <= 48) {
 		return 5;
-	} else if (lba_amount <= 56) {
+	} else if (lba_count <= 56) {
 		return 6;
-	} else if (lba_amount <= 64) {
+	} else if (lba_count <= 64) {
 		return 7;
 	}
 
 	return 7;
 }
 
-TemporaryBlock *NvmeTemporaryBlockManager::AllocateBlock(idx_t lba_amount) {
+TemporaryBlock *NvmeTemporaryBlockManager::AllocateBlock(idx_t lba_count) {
 	// auto start_time = std::chrono::high_resolution_clock::now();
 	// Get the free list index for the given size
-	uint8_t free_list_index = GetFreeListIndex(lba_amount);
+	uint8_t free_list_index = GetFreeListIndex(lba_count);
 
 	TemporaryBlock *block = nullptr;
 
@@ -81,8 +80,8 @@ TemporaryBlock *NvmeTemporaryBlockManager::AllocateBlock(idx_t lba_amount) {
 
 			// Check if the block is large enough
 			// Split the block if it is larger than the requested size
-			if (block->lba_amount > lba_amount) {
-				block = SplitBlock(block, lba_amount);
+			if (block->lba_count > lba_count) {
+				block = SplitBlock(block, lba_count);
 			}
 
 			break; // If we are in here we have found a block
@@ -96,7 +95,7 @@ TemporaryBlock *NvmeTemporaryBlockManager::AllocateBlock(idx_t lba_amount) {
 	// Return the block
 	block->is_free = false; // Mark the block as used
 
-	uint64_t added_bytes = lba_amount * 4096; // Assuming 4K LBA
+	uint64_t added_bytes = lba_count * 4096; // Assuming 4K LBA
 	uint64_t current_bytes = nvmefs_active_temp_bytes.fetch_add(added_bytes) + added_bytes;
 
 	uint64_t peak = nvmefs_peak_temp_bytes.load();
@@ -121,7 +120,6 @@ void NvmeTemporaryBlockManager::PrintBlocks(TemporaryBlock *block) {
 	printf("-------\n");
 }
 void NvmeTemporaryBlockManager::PrintBlocksBackwards(TemporaryBlock *block) {
-
 	printf("-------\n");
 	while (block != nullptr) {
 		printf("Block start lba %llu end lba %llu, is_free %d\n", block->GetStartLBA(), block->GetEndLBA(),
@@ -131,15 +129,15 @@ void NvmeTemporaryBlockManager::PrintBlocksBackwards(TemporaryBlock *block) {
 	printf("-------\n");
 }
 
-TemporaryBlock *NvmeTemporaryBlockManager::SplitBlock(TemporaryBlock *block, idx_t lba_amount) {
+TemporaryBlock *NvmeTemporaryBlockManager::SplitBlock(TemporaryBlock *block, idx_t lba_count) {
 	// Create a new block with the remaining size
-	unique_ptr<TemporaryBlock> new_block = make_uniq<TemporaryBlock>(block->start_lba, lba_amount);
+	unique_ptr<TemporaryBlock> new_block = make_uniq<TemporaryBlock>(block->start_lba, lba_count);
 	TemporaryBlock *new_block_ptr = new_block.get();
 
 	// Update the original block size
 	idx_t endLba = block->GetEndLBA();
-	block->start_lba += lba_amount;
-	block->lba_amount -= lba_amount;
+	block->start_lba += lba_count;
+	block->lba_count -= lba_count;
 
 	// Add the new block to the free list
 	if (new_block->GetStartLBA() != allocated_start_lba) {
@@ -162,12 +160,11 @@ TemporaryBlock *NvmeTemporaryBlockManager::SplitBlock(TemporaryBlock *block, idx
 }
 
 void NvmeTemporaryBlockManager::FreeBlock(TemporaryBlock *block) {
-
 	// auto start_time = std::chrono::high_resolution_clock::now();
 
 	// Mark the block as free
 	block->is_free = true;
-	nvmefs_active_temp_bytes.fetch_sub(block->lba_amount * 4096); // Assuming 4K LBA
+	nvmefs_active_temp_bytes.fetch_sub(block->lba_count * 4096); // Assuming 4K LBA
 
 	// Coalesce the free blocks
 	CoalesceFreeBlocks(block);
@@ -187,7 +184,7 @@ void NvmeTemporaryBlockManager::PushFreeBlock(TemporaryBlock *block) {
 	D_ASSERT(block->previous_free_block == nullptr);
 
 	// Add the block to the free list
-	uint8_t free_list_index = GetFreeListIndex(block->lba_amount);
+	uint8_t free_list_index = GetFreeListIndex(block->lba_count);
 
 	TemporaryBlock *previous_top_block = blocks_free[free_list_index];
 	if (previous_top_block != nullptr) {
@@ -224,13 +221,12 @@ TemporaryBlock *NvmeTemporaryBlockManager::PopFreeBlock(uint8_t free_list_index)
 }
 
 void NvmeTemporaryBlockManager::RemoveFreeBlock(TemporaryBlock *block) {
-
 	if (block->next_free_block != nullptr) {
 		block->next_free_block->previous_free_block = block->previous_free_block;
 	}
 
 	if (block->previous_free_block == nullptr) {
-		uint8_t free_list_index = GetFreeListIndex(block->lba_amount);
+		uint8_t free_list_index = GetFreeListIndex(block->lba_count);
 
 		blocks_free[free_list_index] = block->next_free_block;
 		if (blocks_free[free_list_index] != nullptr) {
@@ -249,12 +245,10 @@ void NvmeTemporaryBlockManager::CoalesceFreeBlocks(TemporaryBlock *block) {
 	// Check if the previous block is free
 	if ((block->previous_block != nullptr && block->previous_block->IsFree()) &&
 	    (block->next_block != nullptr && block->next_block->IsFree())) {
-
 		block->start_lba = block->previous_block->start_lba; // Set the start lba to the previous blocks start lba
-		block->lba_amount += block->previous_block->lba_amount + block->next_block->lba_amount;
+		block->lba_count += block->previous_block->lba_count + block->next_block->lba_count;
 
 		if (block->previous_block->previous_block != nullptr) {
-
 			unique_ptr<TemporaryBlock> old_left_block = move(block->previous_block->previous_block->next_block);
 
 			block->previous_block->previous_block->next_block =
@@ -283,7 +277,7 @@ void NvmeTemporaryBlockManager::CoalesceFreeBlocks(TemporaryBlock *block) {
 
 	} else if (block->previous_block != nullptr && block->previous_block->IsFree()) {
 		block->start_lba = block->previous_block->start_lba; // Set the start lba to the previous blocks start lba
-		block->lba_amount += block->previous_block->lba_amount;
+		block->lba_count += block->previous_block->lba_count;
 
 		if (block->previous_block->previous_block != nullptr) {
 			unique_ptr<TemporaryBlock> old_left_block = move(block->previous_block->previous_block->next_block);
@@ -301,7 +295,7 @@ void NvmeTemporaryBlockManager::CoalesceFreeBlocks(TemporaryBlock *block) {
 			blocks->previous_block = nullptr; // Set the previous block to null
 		}
 	} else if (block->next_block != nullptr && block->next_block->IsFree()) {
-		block->lba_amount += block->next_block->lba_amount;
+		block->lba_count += block->next_block->lba_count;
 
 		unique_ptr<TemporaryBlock> old_right_block = move(block->next_block);
 

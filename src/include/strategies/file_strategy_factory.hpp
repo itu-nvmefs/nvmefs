@@ -12,6 +12,7 @@ class FileStrategyFactory {
 public:
 	static FileMetadataStrategy *GetStrategy(const string &filename, GlobalMetadata *metadata,
 	                                         atomic<idx_t> &db_location, atomic<idx_t> &wal_location,
+	                                         NvmeDevice &device,
 	                                         unique_ptr<TemporaryFileMetadataManager> &temp_manager) {
 		NvmeFileType type = NvmePathHandler::GetFileType(filename);
 
@@ -21,7 +22,7 @@ public:
 		case NvmeFileType::WAL:
 			return new WALFileStrategy(metadata, wal_location);
 		case NvmeFileType::TEMPORARY:
-			return new TemporaryFileStrategy(metadata, temp_manager);
+			return new TemporaryFileStrategy(metadata, device, temp_manager);
 		default:
 			throw InvalidInputException("Unknown file type for: %s", filename);
 		}

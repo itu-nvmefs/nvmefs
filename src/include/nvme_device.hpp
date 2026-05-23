@@ -28,6 +28,7 @@ class NvmeDevice : public Device {
 	friend class NvmeSyncIOEngine;
 	friend class NvmeAsyncThreadPollingIOEngine;
 	friend class NvmeAsynPrefetchIOEngine;
+	friend class TemporaryFileStrategy;
 
 public:
 	NvmeDevice(const NvmeConfig &config);
