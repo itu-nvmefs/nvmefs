@@ -154,12 +154,13 @@ unique_ptr<FileHandle> NvmeFileSystem::OpenFile(const string &path, FileOpenFlag
 		region = GetRegionForPath(db_name);
 	}
 
-    auto &nvme_device = GetNvmeDevice();
-    auto strategy = FileStrategyFactory::GetStrategy(path, region, metadata.get(), GetRuntimeState(db_name), nvme_device, temp_meta_manager);
+	auto &nvme_device = GetNvmeDevice();
+	auto strategy = FileStrategyFactory::GetStrategy(path, region, metadata.get(), GetRuntimeState(db_name),
+	                                                 nvme_device, temp_meta_manager);
 
-    if (flags.CreateFileIfNotExists() && type == NvmeFileType::TEMPORARY) {
-        strategy->CreateFile(path);
-    }
+	if (flags.CreateFileIfNotExists() && type == NvmeFileType::TEMPORARY) {
+		strategy->CreateFile(path);
+	}
 
 	auto handle = make_uniq<NvmeFileHandle>(*this, path, flags, std::move(strategy));
 	handle->file_type = type;
@@ -276,15 +277,13 @@ bool NvmeFileSystem::CanHandleFile(const string &fpath) {
 }
 
 bool NvmeFileSystem::FileExists(const string &filename, optional_ptr<FileOpener> opener) {
-    if (!TryLoadMetadata()) return false;
-    
-    string db_name = ExtractDatabaseName(filename);
-    auto &nvme_device = GetNvmeDevice();
-    auto strategy = FileStrategyFactory::GetStrategy(filename, GetRegionForPath(db_name), metadata.get(), GetRuntimeState(db_name), nvme_device, temp_meta_manager);
+	if (!TryLoadMetadata())
+		return false;
 
 	string db_name = NvmePathHandler::ExtractDatabaseName(filename);
+	auto &nvme_device = GetNvmeDevice();
 	auto strategy = FileStrategyFactory::GetStrategy(filename, GetRegionForPath(db_name), metadata.get(),
-	                                                 GetRuntimeState(db_name), temp_meta_manager);
+	                                                 GetRuntimeState(db_name), nvme_device, temp_meta_manager);
 
 	return strategy ? strategy->FileExists(filename) : false;
 }
@@ -357,10 +356,10 @@ void NvmeFileSystem::RemoveFile(const string &filename, optional_ptr<FileOpener>
 	if (!TryLoadMetadata())
 		return;
 
-    string db_name = ExtractDatabaseName(filename);
-    auto &nvme_device = GetNvmeDevice();
-    auto strategy = FileStrategyFactory::GetStrategy(
-        filename, GetRegionForPath(db_name), metadata.get(), GetRuntimeState(db_name), nvme_device, temp_meta_manager);
+	string db_name = NvmePathHandler::ExtractDatabaseName(filename);
+	auto &nvme_device = GetNvmeDevice();
+	auto strategy = FileStrategyFactory::GetStrategy(filename, GetRegionForPath(db_name), metadata.get(),
+	                                                 GetRuntimeState(db_name), nvme_device, temp_meta_manager);
 
 	if (strategy)
 		strategy->RemoveFile(filename);
@@ -383,16 +382,17 @@ void NvmeFileSystem::Seek(FileHandle &handle, idx_t location) {
 
 	D_ASSERT(location % geo.lba_size == 0);
 
-    string db_name = ExtractDatabaseName(nvme_handle.path);
-    auto &nvme_device = GetNvmeDevice();
-    auto strategy = FileStrategyFactory::GetStrategy(nvme_handle.path, GetRegionForPath(db_name), metadata.get(), GetRuntimeState(db_name), nvme_device, temp_meta_manager);
-    if (!strategy) {
-        throw IOException("Cannot seek: database not attached or runtime state missing for: " + db_name);
-    }
-    if (location >= strategy->GetSeekBound(nvme_handle.path, geo)) {
-        throw IOException("Seek location is out of bounds");
-    }
-    nvme_handle.SetFilePointer(location);
+	string db_name = NvmePathHandler::ExtractDatabaseName(nvme_handle.path);
+	auto &nvme_device = GetNvmeDevice();
+	auto strategy = FileStrategyFactory::GetStrategy(nvme_handle.path, GetRegionForPath(db_name), metadata.get(),
+	                                                 GetRuntimeState(db_name), nvme_device, temp_meta_manager);
+	if (!strategy) {
+		throw IOException("Cannot seek: database not attached or runtime state missing for: " + db_name);
+	}
+	if (location >= strategy->GetSeekBound(nvme_handle.path, geo)) {
+		throw IOException("Seek location is out of bounds");
+	}
+	nvme_handle.SetFilePointer(location);
 }
 
 void NvmeFileSystem::Reset(FileHandle &handle) {
@@ -404,56 +404,59 @@ idx_t NvmeFileSystem::SeekPosition(FileHandle &handle) {
 	return handle.Cast<NvmeFileHandle>().GetFilePointer();
 }
 
-bool NvmeFileSystem::ListFiles(const string &directory, const std::function<void(const string &, bool)> &callback, FileOpener *opener) {
-    bool dir = false;
-    if (StringUtil::Equals(directory.data(), NvmePathHandler::PATH_PREFIX.data())) {
-        if (metadata) {
-            for (uint32_t i = 0; i < MAX_NVME_DATABASES; i++) {
-                if (metadata->databases[i].is_active) {
-                    string db_name = metadata->databases[i].db_path;
-                    callback(db_name + ".db", false);
-                    callback(db_name + ".db.wal", false);
-                }
-            }
-        }
-        callback("/tmp", true);
-        dir = true;
-    } else if (StringUtil::Equals(directory.data(), NvmePathHandler::TMP_DIR_PATH.data())) {
-        dir = true;
-        auto &nvme_device = GetNvmeDevice();
-        TemporaryFileStrategy temp_strategy(metadata.get(), nvme_device, temp_meta_manager);
-        temp_strategy.ListFiles(directory, callback);
-    }
-    return dir;
+bool NvmeFileSystem::ListFiles(const string &directory, const std::function<void(const string &, bool)> &callback,
+                               FileOpener *opener) {
+	bool dir = false;
+	if (StringUtil::Equals(directory.data(), NvmePathHandler::PATH_PREFIX.data())) {
+		if (metadata) {
+			for (uint32_t i = 0; i < MAX_NVME_DATABASES; i++) {
+				if (metadata->databases[i].is_active) {
+					string db_name = metadata->databases[i].db_path;
+					callback(db_name + ".db", false);
+					callback(db_name + ".db.wal", false);
+				}
+			}
+		}
+		callback("/tmp", true);
+		dir = true;
+	} else if (StringUtil::Equals(directory.data(), NvmePathHandler::TMP_DIR_PATH.data())) {
+		dir = true;
+		auto &nvme_device = GetNvmeDevice();
+		TemporaryFileStrategy temp_strategy(metadata.get(), nvme_device, temp_meta_manager);
+		temp_strategy.ListFiles(directory, callback);
+	}
+	return dir;
 }
 
 optional_idx NvmeFileSystem::GetAvailableDiskSpace(const string &path) {
 	DeviceGeometry geo = device->GetDeviceGeometry();
 	optional_idx remaining;
 
-    if (StringUtil::Equals(path.data(), NvmePathHandler::PATH_PREFIX.data())) {
-        idx_t total_avail = 0;
-        if (metadata) {
-            for (uint32_t i = 0; i < MAX_NVME_DATABASES; i++) {
-                if (!metadata->databases[i].is_active) continue;
-                auto *state = GetRuntimeState(metadata->databases[i].db_path);
-                if (!state) continue;
-                DatabaseFileStrategy db_strategy(&metadata->databases[i], state->db_location);
-                WALFileStrategy wal_strategy(&metadata->databases[i], state->wal_location);
-                total_avail += db_strategy.GetAvailableSpace(geo).GetIndex();
-                total_avail += wal_strategy.GetAvailableSpace(geo).GetIndex();
-            }
-            auto &nvme_device = GetNvmeDevice();
-            TemporaryFileStrategy temp_strategy(metadata.get(), nvme_device, temp_meta_manager);
-            total_avail += temp_strategy.GetAvailableSpace(geo).GetIndex();
-        }
-        remaining = total_avail;
-    } else if (StringUtil::Equals(path.data(), NvmePathHandler::TMP_DIR_PATH.data())) {
-        auto &nvme_device = GetNvmeDevice();
-        TemporaryFileStrategy temp_strategy(metadata.get(), nvme_device, temp_meta_manager);
-        remaining = temp_strategy.GetAvailableSpace(geo);
-    }
-    return remaining;
+	if (StringUtil::Equals(path.data(), NvmePathHandler::PATH_PREFIX.data())) {
+		idx_t total_avail = 0;
+		if (metadata) {
+			for (uint32_t i = 0; i < MAX_NVME_DATABASES; i++) {
+				if (!metadata->databases[i].is_active)
+					continue;
+				auto *state = GetRuntimeState(metadata->databases[i].db_path);
+				if (!state)
+					continue;
+				DatabaseFileStrategy db_strategy(&metadata->databases[i], state->db_location);
+				WALFileStrategy wal_strategy(&metadata->databases[i], state->wal_location);
+				total_avail += db_strategy.GetAvailableSpace(geo).GetIndex();
+				total_avail += wal_strategy.GetAvailableSpace(geo).GetIndex();
+			}
+			auto &nvme_device = GetNvmeDevice();
+			TemporaryFileStrategy temp_strategy(metadata.get(), nvme_device, temp_meta_manager);
+			total_avail += temp_strategy.GetAvailableSpace(geo).GetIndex();
+		}
+		remaining = total_avail;
+	} else if (StringUtil::Equals(path.data(), NvmePathHandler::TMP_DIR_PATH.data())) {
+		auto &nvme_device = GetNvmeDevice();
+		TemporaryFileStrategy temp_strategy(metadata.get(), nvme_device, temp_meta_manager);
+		remaining = temp_strategy.GetAvailableSpace(geo);
+	}
+	return remaining;
 }
 Device &NvmeFileSystem::GetDevice() {
 	return *device;
