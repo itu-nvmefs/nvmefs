@@ -74,7 +74,7 @@ public:
 	}
 
 	void ClearAll() {
-		temp_manager->Clear();
+		temp_manager->Clear(device.device);
 	}
 
 private:

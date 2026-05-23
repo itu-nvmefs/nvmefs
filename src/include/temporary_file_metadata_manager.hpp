@@ -51,7 +51,7 @@ public:
 
 	idx_t GetSeekBound(const string &filename);
 
-	void Clear();
+	void Clear(xnvme_dev *dev);
 
 	const TempFileMetadata *GetOrCreateFile(const string &filename);
 
