@@ -165,9 +165,9 @@ void TemporaryFileMetadataManager::TruncateFile(const string &filename, idx_t ne
 	for (idx_t i = from_block_index; i > to_block_index; i--) {
 		idx_t block_index = i - 1;
 		TemporaryBlock *block = tfmeta->block_map[block_index];
+		DSMBlock(block, dev);
 		block_manager->FreeBlock(block);
 		tfmeta->block_map.erase(block_index);
-		DSMBlock(block, dev);
 	}
 
 	// file_to_temp_meta[nvme_handle.path] = tfmeta;
@@ -181,8 +181,8 @@ void TemporaryFileMetadataManager::DeleteFile(const string &filename, xnvme_dev 
 		boost::unique_lock<boost::shared_mutex> file_lock(tfmeta->file_mutex);
 		for (const auto &kv : tfmeta->block_map) {
 			TemporaryBlock *block = kv.second;
-			block_manager->FreeBlock(block);
 			DSMBlock(block, dev);
+			block_manager->FreeBlock(block);
 		}
 	}
 
@@ -210,15 +210,16 @@ idx_t TemporaryFileMetadataManager::GetFileSizeLBA(const string &filename) {
 	return nr_lbas;
 }
 
-void TemporaryFileMetadataManager::Clear() {
+void TemporaryFileMetadataManager::Clear(xnvme_dev *dev) {
 	boost::unique_lock<boost::shared_mutex> alloc_lock(temp_mutex);
 
 	for (const auto &kv : file_to_temp_meta) {
 		TempFileMetadata *tfmeta = kv.second.get();
 		boost::unique_lock<boost::shared_mutex> file_lock(tfmeta->file_mutex);
 
-		for (const auto &block : tfmeta->block_map) {
-			block_manager->FreeBlock(block.second);
+		for (const auto &pair : tfmeta->block_map) {
+			DSMBlock(pair.second, dev);
+			block_manager->FreeBlock(pair.second);
 		}
 	}
 
