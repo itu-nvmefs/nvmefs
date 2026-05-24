@@ -1,4 +1,5 @@
 #include "nvme_device.hpp"
+#include "duckdb/common/exception.hpp"
 #include "nvme_io_engine.hpp"
 #include "io_engines/nvme_async_io_engine.hpp"
 #include "io_engines/nvme_sync_io_engine.hpp"
@@ -31,6 +32,7 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 
 	if (use_fdp) {
 		Printer::Print("[nvmefs] FDP enabled. Initializing placement handles...");
+		allocated_ruhs = std::map<string, uint16_t>(config.fdp_mapping.begin(), config.fdp_mapping.end());
 		InitializePlacementHandles();
 		Printer::Print("[nvmefs] FDP placement handles initialized");
 	} else {
@@ -58,7 +60,6 @@ NvmeDevice::NvmeDevice(const NvmeConfig &config)
 
 	GetThreadIndex();
 
-	allocated_placement_identifiers = std::map<string, uint8_t>(config.fdp_mapping.begin(), config.fdp_mapping.end());
 	geometry = LoadDeviceGeometry();
 }
 
@@ -74,7 +75,7 @@ DeviceGeometry NvmeDevice::GetDeviceGeometry() {
 	return geometry;
 }
 
-uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
+uint8_t NvmeDevice::GetReclaimUnitHandleOrDefault(const string &path) {
 	NvmeFileType type = NvmePathHandler::GetFileType(path);
 
 	string suffix;
@@ -96,16 +97,16 @@ uint8_t NvmeDevice::GetPlacementIdentifierOrDefault(const string &path) {
 	if (type != NvmeFileType::TEMPORARY) {
 		string db_name = NvmePathHandler::ExtractDatabaseName(path);
 		if (!db_name.empty()) {
-			auto it = allocated_placement_identifiers.find(db_name + suffix);
-			if (it != allocated_placement_identifiers.end()) {
+			auto it = allocated_ruhs.find(db_name + suffix);
+			if (it != allocated_ruhs.end()) {
 				return it->second;
 			}
 		}
 	}
 
 	// Fallback to global suffix
-	auto it = allocated_placement_identifiers.find(suffix);
-	if (it != allocated_placement_identifiers.end()) {
+	auto it = allocated_ruhs.find(suffix);
+	if (it != allocated_ruhs.end()) {
 		return it->second;
 	}
 
@@ -179,7 +180,7 @@ void NvmeDevice::Write(void *buffer, const CmdContext &context) {
 	io_engine->Write(buffer, ctx);
 }
 
-void NvmeDevice::PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_ctx, idx_t plid_idx, idx_t dtype,
+void NvmeDevice::PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_ctx, uint16_t ruh, idx_t dtype,
                                      bool write) {
 	const NvmeCmdContext &nvme_cmd_ctx = static_cast<const NvmeCmdContext &>(cmd_ctx);
 
@@ -189,21 +190,17 @@ void NvmeDevice::PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_c
 	if (write && use_fdp) {
 		ctx->cmd.common.cdw12 |= dtype << 20;
 
-		uint16_t phid = placement_handlers.empty() ? 0 : placement_handlers[0]; // Fallback
-
-		// FIX: Match the requested ID directly to the physical Placement Identifier
-		for (uint16_t pi : placement_handlers) {
-			if (pi == plid_idx) {
-				phid = pi;
-				break;
-			}
+		idx_t phid = 0;
+		auto it = ruhs_to_phids.find(ruh);
+		if (it != ruhs_to_phids.end()) {
+			phid = it->second;
 		}
 
 		// --- DEBUG PRINT (Limited to 10 lines to avoid terminal flooding) ---
 		static std::atomic<int> dbg_prints {0};
 		if (dbg_prints.fetch_add(1) < 10) {
-			duckdb::Printer::Print(StringUtil::Format(
-			    "[FDP Debug IO] DuckDB configured FDP ID: %d -> Sending to NVMe PI: %d", plid_idx, phid));
+			duckdb::Printer::PrintF("[FDP Debug IO] DuckDB configured RUH: %d -> Sending to NVMe PI: %d, Path: %s", ruh,
+			                        phid, nvme_cmd_ctx.filepath.c_str());
 		}
 
 		ctx->cmd.common.cdw13 = phid << 16;
@@ -220,32 +217,18 @@ bool NvmeDevice::CheckFDP() {
 }
 
 void NvmeDevice::InitializePlacementHandles() {
-	uint32_t nsid = xnvme_dev_get_nsid(device);
-	xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device);
-
-	struct xnvme_spec_ruhs header;
-	uint32_t header_bytes = sizeof(header);
-	xnvme_nvm_mgmt_recv(&xnvme_ctx, nsid, XNVME_SPEC_IO_MGMT_RECV_RUHS, 0, &header, header_bytes);
-
-	// --- DEBUG PRINT: What does the NVMe controller actually report? ---
-	duckdb::Printer::Print(StringUtil::Format("[FDP Debug] Hardware reported nruhsd (0-based) = %d", header.nruhsd));
-
-	// Fix: +1 to get the true count for the loop limit
-	uint16_t max_placement_handles = header.nruhsd;
-	duckdb::Printer::Print(StringUtil::Format("[FDP Debug] Parsing %d handles...", max_placement_handles));
-
-	struct xnvme_spec_ruhs *ruhs = nullptr;
-	uint32_t ruhs_nbytes = sizeof(*ruhs) + max_placement_handles * sizeof(struct xnvme_spec_ruhs_desc);
-	ruhs = (struct xnvme_spec_ruhs *)xnvme_buf_alloc(device, ruhs_nbytes);
-	memset(ruhs, 0, ruhs_nbytes);
-	xnvme_nvm_mgmt_recv(&xnvme_ctx, nsid, XNVME_SPEC_IO_MGMT_RECV_RUHS, 0, ruhs, ruhs_nbytes);
-
-	for (int i = 0; i < max_placement_handles; ++i) {
-		placement_handlers.emplace_back(ruhs->desc[i].pi);
-		duckdb::Printer::Print(StringUtil::Format("[FDP Debug] placement_handlers[%d] = PI %d", i, ruhs->desc[i].pi));
+	set<uint16_t> sorted_ruhs;
+	for (std::map<string, uint16_t>::iterator it = allocated_ruhs.begin(); it != allocated_ruhs.end(); it++) {
+		sorted_ruhs.insert(it->second);
 	}
-
-	xnvme_buf_free(device, ruhs);
+	int count = 0;
+	if (sorted_ruhs.find(0) == sorted_ruhs.end()) {
+		ruhs_to_phids.emplace(0, count++);
+	}
+	for (set<uint16_t>::iterator it = sorted_ruhs.begin(); it != sorted_ruhs.end(); it++) {
+		ruhs_to_phids.emplace(*it, count++);
+		duckdb::Printer::PrintF("[FDP Debug] ruhs_to_phids[%d] = RUH %d", count - 1, *it);
+	}
 }
 
 idx_t NvmeDevice::GetThreadIndex() {

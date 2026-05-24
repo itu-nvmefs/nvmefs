@@ -22,7 +22,7 @@ struct NvmeConfig {
 	uint64_t max_wal_size;
 	uint64_t max_threads;
 	bool use_fdp;
-	std::unordered_map<string, uint8_t> fdp_mapping;
+	std::unordered_map<string, uint16_t> fdp_mapping;
 	std::unordered_map<string, idx_t> db_configs;
 	idx_t default_db_size;
 };

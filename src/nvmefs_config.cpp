@@ -158,7 +158,7 @@ NvmeConfig NvmeConfigManager::LoadConfig(ClientContext &context, const string &s
 	}
 
 	// Parse FDP mapping
-	std::unordered_map<string, uint8_t> fdp_mapping;
+	std::unordered_map<string, uint16_t> fdp_mapping;
 	if (!fdp_mapping_str.empty()) {
 		auto pairs = StringUtil::Split(fdp_mapping_str, ",");
 		for (const auto &pair : pairs) {
@@ -167,7 +167,7 @@ NvmeConfig NvmeConfigManager::LoadConfig(ClientContext &context, const string &s
 				string key = RemoveWhitespace(kv[0]);
 				string val = RemoveWhitespace(kv[1]);
 				if (!key.empty() && !val.empty()) {
-					fdp_mapping[key] = (uint8_t)std::stoul(val);
+					fdp_mapping[key] = (uint16_t)std::stoul(val);
 				}
 			}
 		}

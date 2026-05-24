@@ -32,7 +32,7 @@ public:
 			max_lbas = lbas_per_4k;
 		}
 
-		uint8_t plid_idx = device.GetPlacementIdentifierOrDefault(ctx.filepath);
+		uint16_t ruh = device.GetReclaimUnitHandleOrDefault(ctx.filepath);
 		idx_t thread_index = device.GetThreadIndex();
 		xnvme_queue *queue = device.queues[thread_index];
 
@@ -63,7 +63,7 @@ public:
 			uint32_t chunk = std::min(lbas_left, max_lbas);
 
 			xnvme_cmd_ctx *xnvme_ctx = xnvme_queue_get_cmd_ctx(queue);
-			device.PrepareIOCmdContext(xnvme_ctx, ctx, plid_idx, 0, false);
+			device.PrepareIOCmdContext(xnvme_ctx, ctx, ruh, 0, false);
 			xnvme_cmd_ctx_set_cb(xnvme_ctx, device.CommandCallback, &promises[chunk_idx]);
 
 			int err = xnvme_nvm_read(xnvme_ctx, nsid, slba, chunk - 1, (char *)dev_buffer + buf_offset, nullptr);
@@ -134,7 +134,7 @@ public:
 
 		memcpy((char *)dev_buffer + ctx.offset, buffer, ctx.nr_bytes);
 
-		uint8_t plid_idx = device.GetPlacementIdentifierOrDefault(ctx.filepath);
+		uint16_t ruh = device.GetReclaimUnitHandleOrDefault(ctx.filepath);
 		idx_t thread_index = device.GetThreadIndex();
 		xnvme_queue *queue = device.queues[thread_index];
 
@@ -165,7 +165,7 @@ public:
 			uint32_t chunk = std::min(lbas_left, max_lbas);
 
 			xnvme_cmd_ctx *xnvme_ctx = xnvme_queue_get_cmd_ctx(queue);
-			device.PrepareIOCmdContext(xnvme_ctx, ctx, plid_idx, DATA_PLACEMENT_MODE, true);
+			device.PrepareIOCmdContext(xnvme_ctx, ctx, ruh, DATA_PLACEMENT_MODE, true);
 			xnvme_cmd_ctx_set_cb(xnvme_ctx, device.CommandCallback, &promises[chunk_idx]);
 
 			int err = xnvme_nvm_write(xnvme_ctx, nsid, slba, chunk - 1, (char *)dev_buffer + buf_offset, nullptr);
