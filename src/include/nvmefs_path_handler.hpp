@@ -54,6 +54,16 @@ public:
 		}
 		return name;
 	}
+
+	static string ExtractTemporarySize(const string &full_path) {
+		size_t start_size = full_path.find_last_of('_') + 1;
+		size_t end_size = full_path.find('-', start_size);
+		string block_size_str = full_path.substr(start_size, end_size - start_size);
+		if (block_size_str == "DEFAULT") {
+			return "256";
+		}
+		return block_size_str.substr(1, block_size_str.length() - 2);
+	}
 };
 
 inline const string NvmePathHandler::PATH_PREFIX = "nvmefs://";

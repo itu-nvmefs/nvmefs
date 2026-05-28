@@ -104,6 +104,14 @@ uint8_t NvmeDevice::GetReclaimUnitHandleOrDefault(const string &path) {
 		}
 	}
 
+	if (type == NvmeFileType::TEMPORARY) {
+		string temp_size = NvmePathHandler::ExtractTemporarySize(path);
+		auto it = allocated_ruhs.find(temp_size + suffix);
+		if (it != allocated_ruhs.end()) {
+			return it->second;
+		}
+	}
+
 	// Fallback to global suffix
 	auto it = allocated_ruhs.find(suffix);
 	if (it != allocated_ruhs.end()) {
