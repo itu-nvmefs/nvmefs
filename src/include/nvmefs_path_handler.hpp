@@ -37,6 +37,23 @@ public:
 	static string GetStem(const string &path) {
 		return StringUtil::GetFileStem(path);
 	}
+
+	static string ExtractDatabaseName(const string &full_path) {
+		string name = full_path;
+		if (StringUtil::StartsWith(name, PATH_PREFIX)) {
+			name = name.substr(PATH_PREFIX.length());
+		}
+		if (StringUtil::EndsWith(name, ".checkpoint")) {
+			name = name.substr(0, name.length() - 11);
+		}
+		if (StringUtil::EndsWith(name, ".wal")) {
+			name = name.substr(0, name.length() - 4);
+		}
+		if (StringUtil::EndsWith(name, ".db")) {
+			name = name.substr(0, name.length() - 3);
+		}
+		return name;
+	}
 };
 
 inline const string NvmePathHandler::PATH_PREFIX = "nvmefs://";

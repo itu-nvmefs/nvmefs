@@ -43,7 +43,7 @@ public:
 	void Read(void *buffer, const NvmeCmdContext &ctx) override {
 		idx_t alloc_size = ctx.nr_lbas * device.geometry.lba_size;
 		uint32_t nsid = xnvme_dev_get_nsid(device.device);
-		uint8_t plid_idx = device.GetPlacementIdentifierOrDefault(ctx.filepath);
+		uint16_t ruh = device.GetReclaimUnitHandleOrDefault(ctx.filepath);
 
 		idx_t thread_index = device.GetThreadIndex();
 		xnvme_queue *queue = device.queues[thread_index];
@@ -82,7 +82,7 @@ public:
 		if (!data_fulfilled) {
 			nvme_buf_ptr dev_buffer = device.AllocateDeviceBuffer(alloc_size);
 			xnvme_cmd_ctx *xnvme_ctx = xnvme_queue_get_cmd_ctx(queue);
-			device.PrepareIOCmdContext(xnvme_ctx, ctx, plid_idx, 0, false);
+			device.PrepareIOCmdContext(xnvme_ctx, ctx, ruh, 0, false);
 
 			std::promise<void> cb_notify;
 			std::future<void> fut = cb_notify.get_future();
@@ -120,7 +120,7 @@ public:
 
 		NvmeCmdContext next_ctx = ctx;
 		next_ctx.start_lba = next_lba;
-		device.PrepareIOCmdContext(prefetch_ctx, next_ctx, plid_idx, 0, false);
+		device.PrepareIOCmdContext(prefetch_ctx, next_ctx, ruh, 0, false);
 
 		xnvme_cmd_ctx_set_cb(prefetch_ctx, device.CommandCallback, prefetch.promise);
 
@@ -166,9 +166,9 @@ public:
 		memcpy((char *)dev_buffer + ctx.offset, buffer, ctx.nr_bytes);
 
 		uint32_t nsid = xnvme_dev_get_nsid(device.device);
-		uint8_t plid_idx = device.GetPlacementIdentifierOrDefault(ctx.filepath);
+		uint16_t ruh = device.GetReclaimUnitHandleOrDefault(ctx.filepath);
 		xnvme_cmd_ctx *xnvme_ctx = xnvme_queue_get_cmd_ctx(queue);
-		device.PrepareIOCmdContext(xnvme_ctx, ctx, plid_idx, DATA_PLACEMENT_MODE, true);
+		device.PrepareIOCmdContext(xnvme_ctx, ctx, ruh, DATA_PLACEMENT_MODE, true);
 
 		std::promise<void> cb_notify;
 		std::future<void> fut = cb_notify.get_future();

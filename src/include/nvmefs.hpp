@@ -13,16 +13,45 @@
 
 namespace duckdb {
 
-struct GlobalMetadata {
+#define MAX_NVME_DATABASES 16
+
+struct DatabaseRegion {
 	uint64_t db_path_size;
 	char db_path[101];
-
 	uint64_t db_start;
 	uint64_t wal_start;
-	uint64_t tmp_start;
-
+	uint64_t wal_end;
 	uint64_t db_location;
 	uint64_t wal_location;
+	bool is_active;
+};
+
+struct GlobalMetadata {
+	uint64_t tmp_start;
+	uint32_t active_databases;
+	DatabaseRegion databases[MAX_NVME_DATABASES];
+};
+
+struct DatabaseRuntimeState {
+	std::atomic<idx_t> db_location;
+	std::atomic<idx_t> wal_location;
+	DatabaseRuntimeState(idx_t db, idx_t wal) : db_location(db), wal_location(wal) {
+	}
+};
+
+struct DatabaseMetrics {
+	std::atomic<uint64_t> total_wal_bytes {0};
+	std::atomic<uint64_t> current_wal_bytes {0};
+	std::atomic<uint64_t> peak_wal_bytes {0};
+	std::atomic<uint64_t> total_db_bytes {0};
+	std::atomic<uint64_t> current_db_bytes {0};
+	std::atomic<uint64_t> peak_db_bytes {0};
+};
+
+struct NvmeMetricsState {
+	std::atomic<uint64_t> total_spill_bytes {0};
+	std::mutex db_lock;
+	std::unordered_map<string, unique_ptr<DatabaseMetrics>> per_db;
 };
 
 struct TemporaryFileMetadata {
@@ -50,13 +79,17 @@ public:
 		return strategy.get();
 	}
 
+	NvmeFileType file_type;
+	DatabaseRuntimeState *op_state = nullptr;
+	DatabaseMetrics *metrics_cache = nullptr;
+
 private:
 	unique_ptr<CmdContext> PrepareCommand(idx_t nr_bytes, idx_t start_lba, idx_t offset);
 
 	/// @brief Calculates the amount of LBAs required to store the given number of bytes
 	/// @param nr_bytes The number of bytes to store
 	/// @return The number of LBAs required to store the given number of bytes
-	idx_t CalculateRequiredLBACount(idx_t nr_bytes);
+	idx_t CalculateRequiredLBACount(idx_t nr_bytes, idx_t offset);
 
 	void SetFilePointer(idx_t location);
 	idx_t GetFilePointer();
@@ -68,8 +101,8 @@ private:
 
 class NvmeFileSystem : public FileSystem {
 public:
-	explicit NvmeFileSystem(NvmeConfig config);
-	NvmeFileSystem(NvmeConfig config, unique_ptr<Device> device);
+	explicit NvmeFileSystem(NvmeConfig config, std::shared_ptr<NvmeMetricsState> metrics);
+	NvmeFileSystem(NvmeConfig config, unique_ptr<Device> device, std::shared_ptr<NvmeMetricsState> metrics);
 	~NvmeFileSystem() override;
 
 	unique_ptr<FileHandle> OpenFile(const string &path, FileOpenFlags flags,
@@ -111,17 +144,20 @@ private:
 	void InitializeMetadata(const string &filename);
 	unique_ptr<GlobalMetadata> ReadMetadata();
 	void WriteMetadata(GlobalMetadata &global);
+
 	NvmeDevice &GetNvmeDevice();
+	DatabaseRegion* GetRegionForPath(const string &db_name);
+	DatabaseRuntimeState *GetRuntimeState(const string &db_name);
+	void AllocateNewDatabaseRegion(const string &db_name);
 
 private:
 	Allocator &allocator;
 	unique_ptr<GlobalMetadata> metadata;
 	unique_ptr<Device> device;
 	unique_ptr<TemporaryFileMetadataManager> temp_meta_manager;
-	atomic<idx_t> db_location;
-	atomic<idx_t> wal_location;
-	idx_t max_temp_size;
-	idx_t max_wal_size;
+	NvmeConfig config;
+	std::unordered_map<string, unique_ptr<DatabaseRuntimeState>> active_dbs;
+	std::shared_ptr<NvmeMetricsState> metrics;
 	static std::recursive_mutex temp_lock;
 };
 } // namespace duckdb

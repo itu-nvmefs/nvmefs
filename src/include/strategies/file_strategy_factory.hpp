@@ -10,21 +10,26 @@ namespace duckdb {
 
 class FileStrategyFactory {
 public:
-	static FileMetadataStrategy *GetStrategy(const string &filename, GlobalMetadata *metadata,
-	                                         atomic<idx_t> &db_location, atomic<idx_t> &wal_location,
-	                                         NvmeDevice &device,
-	                                         unique_ptr<TemporaryFileMetadataManager> &temp_manager) {
+	static unique_ptr<FileMetadataStrategy> GetStrategy(const string &filename, DatabaseRegion *region,
+	                                                    GlobalMetadata *global, DatabaseRuntimeState *state,
+	                                                    NvmeDevice &device,
+	                                                    unique_ptr<TemporaryFileMetadataManager> &temp_manager) {
 		NvmeFileType type = NvmePathHandler::GetFileType(filename);
-
+		// TEMPORARY files aren't tied to a specific database region.
+		if (type == NvmeFileType::TEMPORARY) {
+			return make_uniq<TemporaryFileStrategy>(global, device, temp_manager);
+		}
+		// Everything else needs both a region and runtime state.
+		if (!region || !state) {
+			throw IOException("Attempted to access a file that does not exist: %s", filename.c_str());
+		}
 		switch (type) {
 		case NvmeFileType::DATABASE:
-			return new DatabaseFileStrategy(metadata, db_location);
+			return make_uniq<DatabaseFileStrategy>(region, state->db_location);
 		case NvmeFileType::WAL:
-			return new WALFileStrategy(metadata, wal_location);
-		case NvmeFileType::TEMPORARY:
-			return new TemporaryFileStrategy(metadata, device, temp_manager);
+			return make_uniq<WALFileStrategy>(region, state->wal_location);
 		default:
-			throw InvalidInputException("Unknown file type for: %s", filename);
+			throw InvalidInputException("Unknown file type for: %s", filename.c_str());
 		}
 	}
 };

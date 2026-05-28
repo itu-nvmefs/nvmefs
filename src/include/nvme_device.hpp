@@ -54,7 +54,7 @@ private:
 	/// @brief Determines which placement handler should be used for the given path
 	/// @param path The path of the file that will be opened
 	/// @return A placement identifier
-	uint8_t GetPlacementIdentifierOrDefault(const string &path);
+	uint8_t GetReclaimUnitHandleOrDefault(const string &path);
 
 	/// @brief Allocates a device specific buffer. Should be freed with FreeDeviceBuffer.
 	/// @param nr_bytes The number of bytes to allocate
@@ -76,14 +76,14 @@ private:
 
 	static void CommandCallback(struct xnvme_cmd_ctx *ctx, void *cb_args);
 
-	void PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_ctx, idx_t plid_idx, idx_t dtype, bool write);
+	void PrepareIOCmdContext(xnvme_cmd_ctx *ctx, const CmdContext &cmd_ctx, uint16_t ruh, idx_t dtype, bool write);
 	bool CheckFDP();
 	void InitializePlacementHandles();
 	idx_t GetThreadIndex();
 
 private:
-	map<string, uint8_t> allocated_placement_identifiers;
-	vector<uint16_t> placement_handlers;
+	map<string, uint16_t> allocated_ruhs;
+	map<uint16_t, idx_t> ruhs_to_phids;
 	xnvme_dev *device;
 	const string dev_path;
 	DeviceGeometry geometry;

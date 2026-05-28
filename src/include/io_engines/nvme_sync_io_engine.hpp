@@ -14,10 +14,10 @@ public:
 		nvme_buf_ptr dev_buffer = device.AllocateDeviceBuffer(alloc_size);
 
 		uint32_t nsid = xnvme_dev_get_nsid(device.device);
-		uint8_t plid_idx = device.GetPlacementIdentifierOrDefault(ctx.filepath);
+		uint16_t ruh = device.GetReclaimUnitHandleOrDefault(ctx.filepath);
 		xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device.device);
 
-		device.PrepareIOCmdContext(&xnvme_ctx, ctx, plid_idx, 0, false);
+		device.PrepareIOCmdContext(&xnvme_ctx, ctx, ruh, 0, false);
 
 		int err = xnvme_nvm_read(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
 
@@ -59,10 +59,10 @@ public:
 		memcpy((char *)dev_buffer + ctx.offset, buffer, ctx.nr_bytes);
 
 		uint32_t nsid = xnvme_dev_get_nsid(device.device);
-		uint8_t plid_idx = device.GetPlacementIdentifierOrDefault(ctx.filepath);
+		uint16_t ruh = device.GetReclaimUnitHandleOrDefault(ctx.filepath);
 		xnvme_cmd_ctx xnvme_ctx = xnvme_cmd_ctx_from_dev(device.device);
 
-		device.PrepareIOCmdContext(&xnvme_ctx, ctx, plid_idx, DATA_PLACEMENT_MODE, true);
+		device.PrepareIOCmdContext(&xnvme_ctx, ctx, ruh, DATA_PLACEMENT_MODE, true);
 
 		int err = xnvme_nvm_write(&xnvme_ctx, nsid, ctx.start_lba, ctx.nr_lbas - 1, dev_buffer, nullptr);
 		if (err) {
